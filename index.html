@@ -127,6 +127,9 @@
     font-size: 15px; padding: 12px; margin-top: 4px; cursor: pointer; font-family: inherit;
   }
 
+  .filter { padding: 10px 6px; font-size: 15px; }
+  #filterRow { margin-top: 4px; }
+
   .card-title {
     font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em;
     color: var(--muted); margin-bottom: 10px; text-align: center;
@@ -275,6 +278,12 @@
     <div><div class="n" id="statDiapers">0</div><div class="l">Diapers</div></div>
   </section>
 
+  <div class="row-3" id="filterRow">
+    <button class="side-btn filter" data-filter="all">All</button>
+    <button class="side-btn filter" data-filter="feeds">Feeds</button>
+    <button class="side-btn filter" data-filter="diapers">Diapers</button>
+  </div>
+
   <div id="history"></div>
 
 </div>
@@ -309,8 +318,8 @@
     <div id="endWrap" hidden>
       <label>Ended on</label>
       <div class="row-2">
-        <button class="side-btn" data-end="L">Left<small>finished here</small></button>
-        <button class="side-btn" data-end="R">Right<small>finished here</small></button>
+        <button class="side-btn" data-end="L">Left</button>
+        <button class="side-btn" data-end="R">Right</button>
       </div>
     </div>
 
@@ -334,6 +343,15 @@
     <div class="row-2">
       <button class="side-btn" data-toggle="pee">&#128167;<small>Pee</small></button>
       <button class="side-btn" data-toggle="poop">&#128169;<small>Poop</small></button>
+    </div>
+
+    <div id="sizeWrap" hidden>
+      <label>How big</label>
+      <div class="row-3">
+        <button class="side-btn" data-size="S">Small</button>
+        <button class="side-btn" data-size="M">Medium</button>
+        <button class="side-btn" data-size="L">Large</button>
+      </div>
     </div>
 
     <div class="row-2">
@@ -376,6 +394,7 @@
   var FEEDS_KEY = "nursinglog.entries.v1";
   var DIAPERS_KEY = "nursinglog.diapers.v1";
   var ACTIVE_KEY = "nursinglog.active.v1";
+  var FILTER_KEY = "nursinglog.filter.v1";
   var SIDE_NAME = { L: "Left", R: "Right", B: "Both" };
 
   var $ = function (id) { return document.getElementById(id); };
@@ -418,6 +437,8 @@
     };
   }
 
+  var SIZE_NAME = { S: "Small", M: "Medium", L: "Large" };
+
   function normalizeDiaper(d) {
     if (!d || typeof d.time !== "number") return null;
     if (!d.pee && !d.poop) return null;
@@ -426,6 +447,8 @@
       time: d.time,
       pee: !!d.pee,
       poop: !!d.poop,
+      /* Size describes the poop, so it only rides along when there is one. */
+      size: d.poop && SIZE_NAME[d.size] ? d.size : null,
       notes: typeof d.notes === "string" ? d.notes : ""
     };
   }
@@ -524,6 +547,8 @@
   var feeds = loadFeeds();
   var diapers = loadDiapers();
   var active = loadActive();
+  var filter = localStorage.getItem(FILTER_KEY) || "all";
+  if (filter !== "feeds" && filter !== "diapers") filter = "all";
 
   /* ---------------- formatting ---------------- */
 
@@ -674,14 +699,22 @@
     host.textContent = "";
 
     var items = [];
-    feeds.forEach(function (e) { items.push({ kind: "feed", at: e.start, data: e }); });
-    diapers.forEach(function (d) { items.push({ kind: "diaper", at: d.time, data: d }); });
+    if (filter !== "diapers") {
+      feeds.forEach(function (e) { items.push({ kind: "feed", at: e.start, data: e }); });
+    }
+    if (filter !== "feeds") {
+      diapers.forEach(function (d) { items.push({ kind: "diaper", at: d.time, data: d }); });
+    }
     items.sort(function (a, b) { return b.at - a.at; });
+
+    markSelected($("filterRow"), "data-filter", filter);
 
     if (!items.length) {
       var p = document.createElement("div");
       p.className = "empty";
-      p.textContent = "Feedings and diapers you record will show up here.";
+      p.textContent = filter === "feeds" ? "No feedings recorded yet."
+        : filter === "diapers" ? "No diapers recorded yet."
+        : "Feedings and diapers you record will show up here.";
       host.appendChild(p);
       return;
     }
@@ -739,7 +772,7 @@
         pill.className = "pill " + (d.pee && d.poop ? "both-d" : d.poop ? "poop" : "pee");
         pill.textContent = d.pee && d.poop ? "💧💩" : d.poop ? "💩" : "💧";
         line1.textContent = clockTime(d.time) + " · " + diaperLabel(d);
-        line2.textContent = "Diaper";
+        line2.textContent = d.size ? SIZE_NAME[d.size] + " poop" : "Diaper";
         row.addEventListener("click", function () { openDiaperEditor(d.id); });
       }
 
@@ -834,6 +867,7 @@
   var editingFeedId = null;
   var editorSide = "L";
   var editorEnd = "R";
+  var feedBaseMs = 0, feedBaseKey = "";
 
   function applySideLayout() {
     var single = editorSide !== "B";
@@ -855,10 +889,9 @@
     editorSide = e ? feedSide(e) : "L";
     editorEnd = (e && e.endSide) || "R";
 
-    var when = e ? new Date(e.start) : new Date();
     $("editorTitle").textContent = e ? "Edit feeding" : "Add a feeding";
-    $("fDate").value = when.getFullYear() + "-" + pad(when.getMonth() + 1) + "-" + pad(when.getDate());
-    $("fTime").value = pad(when.getHours()) + ":" + pad(when.getMinutes());
+    feedBaseMs = e ? e.start : Date.now();
+    feedBaseKey = fillDateTime("fDate", "fTime", feedBaseMs);
     $("fLeft").value = e ? minutesOf(e.leftSec) : 0;
     $("fRight").value = e ? minutesOf(e.rightSec) : 0;
     $("fDur").value = e ? minutesOf(e.leftSec + e.rightSec) : 15;
@@ -904,6 +937,20 @@
   $("addManualBtn").addEventListener("click", function () { openFeedEditor(null); });
   $("editorCancel").addEventListener("click", function () { $("editorScrim").hidden = true; });
 
+  /* The date and time inputs only carry minutes. Remember the exact instant a
+     sheet was opened with, and keep it when those fields are left untouched, so
+     logging or editing never quietly shifts a record by up to 59 seconds. */
+  function fieldsKey(dateId, timeId) {
+    return $(dateId).value + "|" + $(timeId).value;
+  }
+
+  function fillDateTime(dateId, timeId, ms) {
+    var d = new Date(ms);
+    $(dateId).value = d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate());
+    $(timeId).value = pad(d.getHours()) + ":" + pad(d.getMinutes());
+    return fieldsKey(dateId, timeId);
+  }
+
   function readDateTime(dateId, timeId) {
     var dateVal = $(dateId).value, timeVal = $(timeId).value;
     if (!dateVal || !timeVal) return null;
@@ -913,7 +960,9 @@
   }
 
   $("editorSave").addEventListener("click", function () {
-    var start = readDateTime("fDate", "fTime");
+    var start = fieldsKey("fDate", "fTime") === feedBaseKey
+      ? feedBaseMs
+      : readDateTime("fDate", "fTime");
     if (start === null) { toast("Please set a date and time"); return; }
 
     var leftMin, rightMin;
@@ -956,58 +1005,71 @@
   /* ---------------- diapers ---------------- */
 
   var editingDiaperId = null;
+  var diaperSize = null;
+  var diaperBaseMs = 0, diaperBaseKey = "";
 
   document.querySelectorAll("[data-diaper]").forEach(function (btn) {
     btn.addEventListener("click", function () {
-      var kind = btn.getAttribute("data-diaper");
-      var record = {
-        id: newId(),
-        time: Date.now(),
-        pee: kind === "pee" || kind === "both",
-        poop: kind === "poop" || kind === "both",
-        notes: ""
-      };
-      var list = diapers.slice();
-      list.push(record);
-      saveDiapers(list);
-      renderAll();
-      toast(diaperLabel(record) + " logged", function () {
-        saveDiapers(diapers.filter(function (d) { return d.id !== record.id; }));
-        renderAll();
-      });
+      openDiaperEditor(null, btn.getAttribute("data-diaper"));
     });
   });
 
-  function openDiaperEditor(id) {
+  function syncSizeVisibility() {
+    var poop = $("diaperScrim").querySelector('[data-toggle="poop"]').classList.contains("sel");
+    $("sizeWrap").hidden = !poop;
+    if (!poop) { diaperSize = null; markSelected($("sizeWrap"), "data-size", null); }
+  }
+
+  /* preset is "pee" / "poop" / "both" when coming from the quick buttons. */
+  function openDiaperEditor(id, preset) {
     var d = null;
     for (var i = 0; i < diapers.length; i++) {
       if (diapers[i].id === id) { d = diapers[i]; break; }
     }
 
     editingDiaperId = d ? d.id : null;
-    var when = d ? new Date(d.time) : new Date();
 
-    $("diaperTitle").textContent = d ? "Edit diaper" : "Add a diaper";
-    $("dDate").value = when.getFullYear() + "-" + pad(when.getMonth() + 1) + "-" + pad(when.getDate());
-    $("dTime").value = pad(when.getHours()) + ":" + pad(when.getMinutes());
+    $("diaperTitle").textContent = d ? "Edit diaper" : preset ? "Log a diaper" : "Add a diaper";
+    diaperBaseMs = d ? d.time : Date.now();
+    diaperBaseKey = fillDateTime("dDate", "dTime", diaperBaseMs);
     $("dNotes").value = d ? d.notes : "";
     $("diaperDelete").hidden = !d;
 
     var scrim = $("diaperScrim");
-    scrim.querySelector('[data-toggle="pee"]').classList.toggle("sel", d ? d.pee : true);
-    scrim.querySelector('[data-toggle="poop"]').classList.toggle("sel", d ? d.poop : false);
+    var wantsPee = d ? d.pee : preset !== "poop";
+    var wantsPoop = d ? d.poop : preset === "poop" || preset === "both";
+    scrim.querySelector('[data-toggle="pee"]').classList.toggle("sel", wantsPee);
+    scrim.querySelector('[data-toggle="poop"]').classList.toggle("sel", wantsPoop);
+
+    diaperSize = d ? d.size : null;
+    markSelected($("sizeWrap"), "data-size", diaperSize);
+    syncSizeVisibility();
+
     scrim.hidden = false;
   }
 
   document.querySelectorAll("[data-toggle]").forEach(function (btn) {
-    btn.addEventListener("click", function () { btn.classList.toggle("sel"); });
+    btn.addEventListener("click", function () {
+      btn.classList.toggle("sel");
+      syncSizeVisibility();
+    });
   });
 
-  $("addDiaperBtn").addEventListener("click", function () { openDiaperEditor(null); });
+  document.querySelectorAll("[data-size]").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      var next = btn.getAttribute("data-size");
+      diaperSize = diaperSize === next ? null : next;   /* tap again to unset */
+      markSelected($("sizeWrap"), "data-size", diaperSize);
+    });
+  });
+
+  $("addDiaperBtn").addEventListener("click", function () { openDiaperEditor(null, null); });
   $("diaperCancel").addEventListener("click", function () { $("diaperScrim").hidden = true; });
 
   $("diaperSave").addEventListener("click", function () {
-    var time = readDateTime("dDate", "dTime");
+    var time = fieldsKey("dDate", "dTime") === diaperBaseKey
+      ? diaperBaseMs
+      : readDateTime("dDate", "dTime");
     if (time === null) { toast("Please set a date and time"); return; }
 
     var scrim = $("diaperScrim");
@@ -1015,13 +1077,14 @@
     var poop = scrim.querySelector('[data-toggle="poop"]').classList.contains("sel");
     if (!pee && !poop) { toast("Pick pee, poop, or both"); return; }
 
-    var record = {
+    var record = normalizeDiaper({
       id: editingDiaperId || newId(),
       time: time,
       pee: pee,
       poop: poop,
+      size: diaperSize,
       notes: $("dNotes").value.trim()
-    };
+    });
 
     var list = diapers.filter(function (d) { return d.id !== editingDiaperId; });
     list.push(record);
@@ -1042,6 +1105,14 @@
   });
 
   /* ---------------- menu, export, import ---------------- */
+
+  document.querySelectorAll("[data-filter]").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      filter = btn.getAttribute("data-filter");
+      localStorage.setItem(FILTER_KEY, filter);
+      renderHistory();
+    });
+  });
 
   $("menuBtn").addEventListener("click", function () { $("menuScrim").hidden = false; });
   $("menuClose").addEventListener("click", function () { $("menuScrim").hidden = true; });
@@ -1076,7 +1147,7 @@
   $("exportCsv").addEventListener("click", function () {
     if (!feeds.length && !diapers.length) { toast("Nothing to export yet"); return; }
 
-    var rows = [["Date", "Time", "Type", "Side", "Left (min)", "Right (min)", "Total (min)", "Ended on", "Pee", "Poop", "Notes"]];
+    var rows = [["Date", "Time", "Type", "Side", "Left (min)", "Right (min)", "Total (min)", "Ended on", "Pee", "Poop", "Poop size", "Notes"]];
 
     var items = [];
     feeds.forEach(function (e) { items.push({ at: e.start, kind: "feed", data: e }); });
@@ -1092,11 +1163,12 @@
         var e = item.data;
         rows.push([date, time, "Feeding", SIDE_NAME[feedSide(e)],
           minutesOf(e.leftSec), minutesOf(e.rightSec), feedMinutes(e),
-          e.endSide ? SIDE_NAME[e.endSide] : "", "", "", e.notes]);
+          e.endSide ? SIDE_NAME[e.endSide] : "", "", "", "", e.notes]);
       } else {
         var d = item.data;
         rows.push([date, time, "Diaper", "", "", "", "", "",
-          d.pee ? "Yes" : "", d.poop ? "Yes" : "", d.notes]);
+          d.pee ? "Yes" : "", d.poop ? "Yes" : "",
+          d.size ? SIZE_NAME[d.size] : "", d.notes]);
       }
     });
 
