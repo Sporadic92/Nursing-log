@@ -61,8 +61,10 @@ await page.goto(BASE, { waitUntil: 'networkidle' });
 // tapping a row opens a read-only view; Edit is a deliberate second tap
 const openRow = async (n = 0) => {
   await (await page.$$('.entry'))[n].click();
-  if (!(await page.isVisible('#detailScrim'))) throw new Error('row ' + n + ' did not open the detail view');
-  await page.click('#detailEdit');
+  const edit = await page.isVisible('#editorEdit') ? '#editorEdit'
+    : await page.isVisible('#diaperEdit') ? '#diaperEdit' : null;
+  if (!edit) throw new Error('row ' + n + ' did not open a locked card');
+  await page.click(edit);
 };
 
 check('idle view', await page.isVisible('#idleView'));
@@ -120,19 +122,39 @@ check('split shown', (await page.textContent('#history')).includes('Left 1 min �
 check('row shows ending side', (await page.textContent('#history')).includes('· ended right'));
 check('last-fed line shows ending side', (await page.textContent('#sinceText')).includes('ended on right'));
 
-// ---------- read-only detail view ----------
+// ---------- reading a record: the editor card, locked ----------
 await (await page.$$('.entry'))[0].click();
-check('row opens the detail view', await page.isVisible('#detailScrim'));
-check('editor stays closed', !(await page.isVisible('#editorScrim')));
-check('detail names the record', (await page.textContent('#detailTitle')).includes('Feeding · Both'));
-const detail = await page.textContent('#detailBody');
-check('detail shows when', detail.includes('Today'));
-check('detail shows per-side time', detail.includes('Left') && detail.includes('Right'));
-check('detail shows ending side', detail.includes('Ended on'));
-check('detail has no live controls', (await page.$$('#detailScrim [data-pick], #detailScrim input')).length === 0);
-await page.click('#detailClose');
-check('close leaves the record alone', !(await page.isVisible('#detailScrim'))
-  && !(await page.isVisible('#editorScrim')));
+check('row opens the card', await page.isVisible('#editorScrim'));
+check('card is locked', await page.$eval('#editorScrim .sheet', n => n.classList.contains('locked')));
+check('title names the record', (await page.textContent('#editorTitle')).includes('Feeding · Both'));
+check('reading offers Close and Edit', await page.isVisible('#editorClose') && await page.isVisible('#editorEdit'));
+check('no Save while reading', !(await page.isVisible('#editorSave')));
+check('no Delete while reading', !(await page.isVisible('#editorDelete')));
+check('every field is disabled',
+  await page.$$eval('#editorScrim input, #editorScrim textarea', ns => ns.every(n => n.disabled)));
+check('values still readable', await page.inputValue('#fLeft') === '1');
+check('the chosen side still shows', (await page.getAttribute('[data-pick="B"]', 'class')).includes('sel'));
+
+// tapping a chip while locked must not change the record
+await page.click('[data-pick="L"]', { force: true });
+check('locked chips ignore taps', (await page.getAttribute('[data-pick="B"]', 'class')).includes('sel'));
+check('layout did not switch', await page.isVisible('#durSplit'));
+await page.click('[data-end="L"]', { force: true });
+check('locked ending side ignores taps', (await page.getAttribute('[data-end="R"]', 'class')).includes('sel'));
+
+await page.click('#editorClose');
+check('closing changed nothing', (await page.textContent('#history')).includes('Left 1 min · Right 1 min'));
+
+// Edit unlocks the same card in place
+await (await page.$$('.entry'))[0].click();
+await page.click('#editorEdit');
+check('edit unlocks the card', !(await page.$eval('#editorScrim .sheet', n => n.classList.contains('locked'))));
+check('title switches to editing', await page.textContent('#editorTitle') === 'Edit feeding');
+check('fields become writable',
+  await page.$$eval('#editorScrim input, #editorScrim textarea', ns => ns.every(n => !n.disabled)));
+check('Save and Delete appear', await page.isVisible('#editorSave') && await page.isVisible('#editorDelete'));
+check('Close and Edit step aside', !(await page.isVisible('#editorClose')) && !(await page.isVisible('#editorEdit')));
+await page.click('#editorCancel');
 
 // ---------- editing keeps both sides ----------
 await openRow(0);
@@ -244,13 +266,20 @@ check('still sorted above the feeding',
 
 // deselecting poop drops the size question and the stored size
 await (await page.$$('.entry'))[0].click();
-check('diaper detail opens', await page.isVisible('#detailScrim'));
-check('diaper detail titled', (await page.textContent('#detailTitle')).includes('Diaper · Poop'));
-const dDetail = await page.textContent('#detailBody');
-check('diaper detail shows size', dDetail.includes('How big') && dDetail.includes('Medium'));
-check('diaper detail shows notes', dDetail.includes('Seedy, mustard'));
-await page.click('#detailEdit');
-check('edit opens the diaper form', await page.isVisible('#diaperScrim'));
+check('diaper card opens locked', await page.isVisible('#diaperScrim')
+  && await page.$eval('#diaperScrim .sheet', n => n.classList.contains('locked')));
+check('diaper title names it', (await page.textContent('#diaperTitle')).includes('Diaper · Poop'));
+check('size shown while reading', await page.isVisible('#sizeWrap')
+  && (await page.getAttribute('[data-size="M"]', 'class')).includes('sel'));
+check('notes shown while reading', (await page.inputValue('#dNotes')).includes('Seedy, mustard'));
+check('diaper fields disabled',
+  await page.$$eval('#diaperScrim input, #diaperScrim textarea', ns => ns.every(n => n.disabled)));
+await page.click('[data-toggle="pee"]', { force: true });
+check('locked toggles ignore taps', !(await page.getAttribute('[data-toggle="pee"]', 'class')).includes('sel'));
+await page.click('#diaperEdit');
+check('edit unlocks the diaper card', !(await page.$eval('#diaperScrim .sheet', n => n.classList.contains('locked'))));
+check('diaper fields writable',
+  await page.$$eval('#diaperScrim input, #diaperScrim textarea', ns => ns.every(n => !n.disabled)));
 check('size prefilled on edit', (await page.getAttribute('[data-size="M"]', 'class')).includes('sel'));
 await page.click('[data-toggle="poop"]');
 check('size prompt hides with poop', !(await page.isVisible('#sizeWrap')));
@@ -284,6 +313,20 @@ await page.fill('#dTime', '22:10');
 await page.click('#diaperSave');
 check('past diaper added', (await page.textContent('#history')).includes('10:10 PM'));
 check('today diaper count unchanged', await page.textContent('#statDiapers') === '2');
+
+// a record with no notes should not show an empty notes box while reading
+await page.click('[data-diaper="pee"]');
+await page.click('#diaperSave');
+await (await page.$$('.entry'))[0].click();
+check('empty notes hidden while reading', !(await page.isVisible('#dNotesWrap')));
+check('no size row for a pee', !(await page.isVisible('#sizeWrap')));
+await page.click('#diaperEdit');
+check('notes box returns when editing', await page.isVisible('#dNotesWrap'));
+await page.click('#diaperCancel');
+await (await page.$$('.entry'))[0].click();
+await page.click('#diaperEdit');
+page.once('dialog', d => d.accept());
+await page.click('#diaperDelete');
 
 // ---------- filter views ----------
 const rowCount = async () => (await page.$$('.entry')).length;

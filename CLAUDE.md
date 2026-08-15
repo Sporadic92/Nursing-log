@@ -99,13 +99,23 @@ total elapsed, a live per-side tile each, Stop & Save), diaper card (time since 
 Poop / Both), today's stats, `All / Feeds / Diapers` filter, then the timeline grouped by day
 with per-day totals.
 
-Four bottom sheets: **detail** (read-only, with Close and Edit), **feeding editor**, **diaper
-editor**, and **menu** (CSV export, JSON backup, restore, about).
+Three bottom sheets: the **feeding editor**, the **diaper editor**, and the **menu** (CSV
+export, JSON backup, restore, about).
+
+Reading and editing a record are the *same sheet*. A row tap opens its editor with the
+`locked` class on `.sheet`: every input `disabled`, chips inert via `pointer-events: none` with
+unselected ones dimmed, the field borders dropped so the values read as text, and Close/Edit in
+place of Cancel/Save/Delete. **Edit** unlocks it where it stands. Optional rows that are empty
+(notes, poop size) are hidden while locked, so reading never shows a blank box. `setLocked()`
+drives all of it and both editors go through it — a new editor should too, and any new field
+must be inside the sheet so it gets disabled with the rest.
 
 Interaction rules worth preserving:
 
-- A row tap opens the read-only detail sheet. Editing is a second, deliberate tap. Delete lives
-  inside the editors only.
+- A row tap opens a locked card. Editing is a second, deliberate tap. Delete lives inside the
+  editors only, so it takes an intentional path to change or remove anything. This exists
+  because tapping a row used to drop straight into a live form, where a stray touch on a
+  highlighted chip silently rewrote the record you opened to check.
 - The diaper quick buttons open the editor pre-filled — they do not write a record. Nothing is
   saved until Save, so a mis-tap costs a Cancel.
 - The running timer survives app close, phone restart, and reload, because `segStart` and the
@@ -151,7 +161,8 @@ static server on a random port, drives a phone-sized Chromium through the real U
 It covers per-side accrual and freezing on switch, timer persistence across reload, the detail
 view being inert, editor round trips, diaper logging and validation, filters, day grouping and
 totals, CSV and JSON round trips, de-duplicated restore, migration of the older format, service
-worker registration, and loading with the network cut.
+worker registration, and loading with the network cut. It also force-taps the chips of a locked
+card and asserts the record is unchanged.
 
 **Extend it with any behavior change** — it has caught several real bugs before they reached her
 phone, including both gotchas above. Two habits that paid off: assert on what the user would

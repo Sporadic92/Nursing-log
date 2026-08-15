@@ -50,11 +50,11 @@ Then turn on Pages:
 - **Done** — tap **Stop & Save**. The feeding is saved with the start time, the minutes on each
   side, a Left / Right / Both label worked out from those, and **which side it ended on** —
   whichever tile was running when she stopped.
-- **Look at one** — tap any feeding in the list to read it back: when it started, the total, the
-  minutes on each side, which side it ended on, and the notes. That view has no controls to
-  nudge, so checking a feeding can't change it.
-- **Fix or annotate it** — from that view, tap **Edit** to change the side, time, per-side
-  minutes, ending side, or notes, or to delete it. Picking **Both** in the editor gives separate
+- **Look at one** — tap any feeding in the list to read it back on the same card it was entered
+  on: the side, the start time, the minutes on each side, which side it ended on, and the notes.
+  Nothing on that card responds to a tap, so checking a feeding can't change it.
+- **Fix or annotate it** — tap **Edit** and the same card comes to life, ready to change the
+  side, time, per-side minutes, ending side, or notes, or to delete it. Picking **Both** in the editor gives separate
   boxes for left and right minutes plus an **Ended on** choice; picking one side gives a single
   box, since the ending side is then obvious.
 - **Forgot to hit start?** Tap **+ Add a past feeding**.
@@ -66,7 +66,8 @@ Then turn on Pages:
   until you save, so a mis-tap costs one **Cancel**.
 - **How big** (small / medium / large) only appears when there's a poop to describe, and tapping
   the chosen size again clears it. It's optional either way.
-- Tap a diaper in the list to read it back, then **Edit** to change any of it or delete it.
+- Tap a diaper in the list to read it back the same way, then **Edit** to change any of it or
+  delete it.
 - **+ Add a past diaper** for one that wasn't logged when it happened.
 
 ### The timeline

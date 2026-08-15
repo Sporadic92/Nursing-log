@@ -197,16 +197,15 @@
   .btn.danger { color: var(--danger); }
   .btn.wide { grid-column: 1 / -1; }
 
-  #detailBody { margin: 0; }
-  .detail-row {
-    display: flex; justify-content: space-between; align-items: baseline;
-    gap: 18px; padding: 13px 2px; border-bottom: 1px solid var(--line);
+  /* A sheet opened to read a record wears .locked: same card layout, nothing live. */
+  .sheet.locked .side-btn { pointer-events: none; }
+  .sheet.locked .side-btn:not(.sel) { opacity: 0.4; }
+  .sheet.locked input, .sheet.locked textarea {
+    background: var(--surface-2); border-color: var(--surface-2);
   }
-  .detail-row:last-child { border-bottom: none; }
-  .detail-row dt { color: var(--muted); font-size: 14px; flex: none; }
-  .detail-row dd { margin: 0; font-weight: 600; text-align: right; }
-  .detail-row.stacked { display: block; }
-  .detail-row.stacked dd { text-align: left; font-weight: 400; margin-top: 4px; white-space: pre-wrap; }
+  input:disabled, textarea:disabled {
+    color: var(--text); opacity: 1; -webkit-text-fill-color: var(--text);
+  }
 
   .menu-item {
     display: block; width: 100%; text-align: left; background: none; border: none;
@@ -299,18 +298,6 @@
 
 </div>
 
-<!-- Record detail (read-only; editing is a deliberate second step) -->
-<div class="scrim" id="detailScrim" hidden>
-  <div class="sheet" role="dialog" aria-modal="true">
-    <h3 id="detailTitle">Feeding</h3>
-    <dl id="detailBody"></dl>
-    <div class="sheet-actions">
-      <button class="btn" id="detailClose">Close</button>
-      <button class="btn primary" id="detailEdit">Edit</button>
-    </div>
-  </div>
-</div>
-
 <!-- Feeding editor -->
 <div class="scrim" id="editorScrim" hidden>
   <div class="sheet" role="dialog" aria-modal="true">
@@ -346,10 +333,14 @@
       </div>
     </div>
 
-    <label for="fNotes">Notes</label>
-    <textarea id="fNotes" placeholder="Fussy, spit up, fell asleep, vitamin D&hellip;"></textarea>
+    <div id="fNotesWrap">
+      <label for="fNotes">Notes</label>
+      <textarea id="fNotes" placeholder="Fussy, spit up, fell asleep, vitamin D&hellip;"></textarea>
+    </div>
 
     <div class="sheet-actions">
+      <button class="btn" id="editorClose" hidden>Close</button>
+      <button class="btn primary" id="editorEdit" hidden>Edit</button>
       <button class="btn" id="editorCancel">Cancel</button>
       <button class="btn primary" id="editorSave">Save</button>
       <button class="btn danger wide" id="editorDelete" hidden>Delete this feeding</button>
@@ -382,10 +373,14 @@
       <div><label for="dTime">Time</label><input type="time" id="dTime"></div>
     </div>
 
-    <label for="dNotes">Notes</label>
-    <textarea id="dNotes" placeholder="Color, rash, leaked&hellip;"></textarea>
+    <div id="dNotesWrap">
+      <label for="dNotes">Notes</label>
+      <textarea id="dNotes" placeholder="Color, rash, leaked&hellip;"></textarea>
+    </div>
 
     <div class="sheet-actions">
+      <button class="btn" id="diaperClose" hidden>Close</button>
+      <button class="btn primary" id="diaperEdit" hidden>Edit</button>
       <button class="btn" id="diaperCancel">Cancel</button>
       <button class="btn primary" id="diaperSave">Save</button>
       <button class="btn danger wide" id="diaperDelete" hidden>Delete this diaper</button>
@@ -789,14 +784,14 @@
         pill.textContent = feedSide(e);
         line1.textContent = clockTime(e.start) + " · " + durationText(feedMinutes(e));
         line2.textContent = feedSubText(e);
-        row.addEventListener("click", function () { openDetail("feed", e.id); });
+        row.addEventListener("click", function () { openFeedEditor(e.id, true); });
       } else {
         var d = item.data;
         pill.className = "pill " + (d.pee && d.poop ? "both-d" : d.poop ? "poop" : "pee");
         pill.textContent = d.pee && d.poop ? "💧💩" : d.poop ? "💩" : "💧";
         line1.textContent = clockTime(d.time) + " · " + diaperLabel(d);
         line2.textContent = d.size ? SIZE_NAME[d.size] + " poop" : "Diaper";
-        row.addEventListener("click", function () { openDetail("diaper", d.id); });
+        row.addEventListener("click", function () { openDiaperEditor(d.id, null, true); });
       }
 
       var notes = item.data.notes;
@@ -885,24 +880,25 @@
     }
   });
 
-  /* ---------------- record detail ---------------- */
+  /* ---------------- read-only mode ---------------- */
 
-  var detailKind = null, detailId = null;
+  /* Reading a record shows the same card as editing it, with every control
+     inert, so nothing can be nudged while looking. Edit unlocks it in place. */
+  function setLocked(scrimId, on, opts) {
+    var sheet = $(scrimId).querySelector(".sheet");
+    sheet.classList.toggle("locked", on);
 
-  function whenText(ms) {
-    return dayLabel(dayKey(ms)) + " · " + clockTime(ms);
-  }
+    var fields = sheet.querySelectorAll("input, textarea");
+    for (var i = 0; i < fields.length; i++) fields[i].disabled = on;
 
-  function detailRow(term, value, stacked) {
-    var row = document.createElement("div");
-    row.className = "detail-row" + (stacked ? " stacked" : "");
-    var dt = document.createElement("dt");
-    dt.textContent = term;
-    var dd = document.createElement("dd");
-    dd.textContent = value;
-    row.appendChild(dt);
-    row.appendChild(dd);
-    return row;
+    $(opts.close).hidden = !on;
+    $(opts.edit).hidden = !on;
+    $(opts.cancel).hidden = on;
+    $(opts.save).hidden = on;
+    $(opts.del).hidden = on || !opts.existing;
+
+    /* Empty boxes say nothing when you are only reading. */
+    $(opts.notes).hidden = on && !$(opts.notesField).value;
   }
 
   function findById(list, key, id) {
@@ -911,43 +907,6 @@
     }
     return null;
   }
-
-  function openDetail(kind, id) {
-    var body = $("detailBody");
-    body.textContent = "";
-
-    if (kind === "feed") {
-      var e = findById(feeds, "id", id);
-      if (!e) return;
-      $("detailTitle").textContent = "Feeding · " + SIDE_NAME[feedSide(e)];
-      body.appendChild(detailRow("Started", whenText(e.start)));
-      body.appendChild(detailRow("Total", durationText(feedMinutes(e))));
-      if (e.leftSec > 0) body.appendChild(detailRow("Left", durationText(minutesOf(e.leftSec))));
-      if (e.rightSec > 0) body.appendChild(detailRow("Right", durationText(minutesOf(e.rightSec))));
-      if (e.endSide) body.appendChild(detailRow("Ended on", SIDE_NAME[e.endSide]));
-      if (e.notes) body.appendChild(detailRow("Notes", e.notes, true));
-    } else {
-      var d = findById(diapers, "id", id);
-      if (!d) return;
-      $("detailTitle").textContent = "Diaper · " + diaperLabel(d);
-      body.appendChild(detailRow("Logged", whenText(d.time)));
-      body.appendChild(detailRow("What", diaperLabel(d)));
-      if (d.size) body.appendChild(detailRow("How big", SIZE_NAME[d.size]));
-      if (d.notes) body.appendChild(detailRow("Notes", d.notes, true));
-    }
-
-    detailKind = kind;
-    detailId = id;
-    $("detailScrim").hidden = false;
-  }
-
-  $("detailClose").addEventListener("click", function () { $("detailScrim").hidden = true; });
-
-  $("detailEdit").addEventListener("click", function () {
-    $("detailScrim").hidden = true;
-    if (detailKind === "feed") openFeedEditor(detailId);
-    else openDiaperEditor(detailId, null);
-  });
 
   /* ---------------- feeding editor ---------------- */
 
@@ -960,34 +919,49 @@
     var single = editorSide !== "B";
     $("durSingle").hidden = !single;
     $("durSplit").hidden = single;
-    $("endWrap").hidden = single;   /* with one side, the ending side is that side */
+    var reading = $("editorScrim").querySelector(".sheet").classList.contains("locked");
+    $("endWrap").hidden = single || (reading && !editorEnd);
     $("durLabel").textContent = "Minutes on the " + (editorSide === "R" ? "right" : "left");
     markSelected($("editorScrim"), "data-pick", editorSide);
     markSelected($("endWrap"), "data-end", editorEnd);
   }
 
-  function openFeedEditor(id) {
-    var e = null;
-    for (var i = 0; i < feeds.length; i++) {
-      if (feeds[i].id === id) { e = feeds[i]; break; }
-    }
+  function lockFeed(on) {
+    setLocked("editorScrim", on, {
+      close: "editorClose", edit: "editorEdit", cancel: "editorCancel",
+      save: "editorSave", del: "editorDelete",
+      notes: "fNotesWrap", notesField: "fNotes", existing: !!editingFeedId
+    });
+    applySideLayout();
+  }
+
+  function openFeedEditor(id, locked) {
+    var e = findById(feeds, "id", id);
 
     editingFeedId = e ? e.id : null;
     editorSide = e ? feedSide(e) : "L";
     editorEnd = (e && e.endSide) || "R";
 
-    $("editorTitle").textContent = e ? "Edit feeding" : "Add a feeding";
+    $("editorTitle").textContent = !e ? "Add a feeding"
+      : locked ? "Feeding · " + SIDE_NAME[feedSide(e)]
+      : "Edit feeding";
     feedBaseMs = e ? e.start : Date.now();
     feedBaseKey = fillDateTime("fDate", "fTime", feedBaseMs);
     $("fLeft").value = e ? minutesOf(e.leftSec) : 0;
     $("fRight").value = e ? minutesOf(e.rightSec) : 0;
     $("fDur").value = e ? minutesOf(e.leftSec + e.rightSec) : 15;
     $("fNotes").value = e ? e.notes : "";
-    $("editorDelete").hidden = !e;
 
-    applySideLayout();
+    lockFeed(!!locked);
     $("editorScrim").hidden = false;
   }
+
+  $("editorClose").addEventListener("click", function () { $("editorScrim").hidden = true; });
+
+  $("editorEdit").addEventListener("click", function () {
+    $("editorTitle").textContent = "Edit feeding";
+    lockFeed(false);
+  });
 
   function num(id) {
     var v = parseInt($(id).value, 10);
@@ -1021,7 +995,7 @@
     });
   });
 
-  $("addManualBtn").addEventListener("click", function () { openFeedEditor(null); });
+  $("addManualBtn").addEventListener("click", function () { openFeedEditor(null, false); });
   $("editorCancel").addEventListener("click", function () { $("editorScrim").hidden = true; });
 
   /* The date and time inputs only carry minutes. Remember the exact instant a
@@ -1097,30 +1071,40 @@
 
   document.querySelectorAll("[data-diaper]").forEach(function (btn) {
     btn.addEventListener("click", function () {
-      openDiaperEditor(null, btn.getAttribute("data-diaper"));
+      openDiaperEditor(null, btn.getAttribute("data-diaper"), false);
     });
   });
 
   function syncSizeVisibility() {
-    var poop = $("diaperScrim").querySelector('[data-toggle="poop"]').classList.contains("sel");
-    $("sizeWrap").hidden = !poop;
-    if (!poop) { diaperSize = null; markSelected($("sizeWrap"), "data-size", null); }
+    var sheet = $("diaperScrim").querySelector(".sheet");
+    var poop = sheet.querySelector('[data-toggle="poop"]').classList.contains("sel");
+    var reading = sheet.classList.contains("locked");
+    if (!poop && !reading) { diaperSize = null; markSelected($("sizeWrap"), "data-size", null); }
+    /* Reading a poop with no size recorded, the row would be three dimmed chips. */
+    $("sizeWrap").hidden = !poop || (reading && !diaperSize);
+  }
+
+  function lockDiaper(on) {
+    setLocked("diaperScrim", on, {
+      close: "diaperClose", edit: "diaperEdit", cancel: "diaperCancel",
+      save: "diaperSave", del: "diaperDelete",
+      notes: "dNotesWrap", notesField: "dNotes", existing: !!editingDiaperId
+    });
+    syncSizeVisibility();
   }
 
   /* preset is "pee" / "poop" / "both" when coming from the quick buttons. */
-  function openDiaperEditor(id, preset) {
-    var d = null;
-    for (var i = 0; i < diapers.length; i++) {
-      if (diapers[i].id === id) { d = diapers[i]; break; }
-    }
+  function openDiaperEditor(id, preset, locked) {
+    var d = findById(diapers, "id", id);
 
     editingDiaperId = d ? d.id : null;
 
-    $("diaperTitle").textContent = d ? "Edit diaper" : preset ? "Log a diaper" : "Add a diaper";
+    $("diaperTitle").textContent = !d ? (preset ? "Log a diaper" : "Add a diaper")
+      : locked ? "Diaper · " + diaperLabel(d)
+      : "Edit diaper";
     diaperBaseMs = d ? d.time : Date.now();
     diaperBaseKey = fillDateTime("dDate", "dTime", diaperBaseMs);
     $("dNotes").value = d ? d.notes : "";
-    $("diaperDelete").hidden = !d;
 
     var scrim = $("diaperScrim");
     var wantsPee = d ? d.pee : preset !== "poop";
@@ -1130,10 +1114,17 @@
 
     diaperSize = d ? d.size : null;
     markSelected($("sizeWrap"), "data-size", diaperSize);
-    syncSizeVisibility();
 
+    lockDiaper(!!locked);
     scrim.hidden = false;
   }
+
+  $("diaperClose").addEventListener("click", function () { $("diaperScrim").hidden = true; });
+
+  $("diaperEdit").addEventListener("click", function () {
+    $("diaperTitle").textContent = "Edit diaper";
+    lockDiaper(false);
+  });
 
   document.querySelectorAll("[data-toggle]").forEach(function (btn) {
     btn.addEventListener("click", function () {
@@ -1150,7 +1141,7 @@
     });
   });
 
-  $("addDiaperBtn").addEventListener("click", function () { openDiaperEditor(null, null); });
+  $("addDiaperBtn").addEventListener("click", function () { openDiaperEditor(null, null, false); });
   $("diaperCancel").addEventListener("click", function () { $("diaperScrim").hidden = true; });
 
   $("diaperSave").addEventListener("click", function () {
@@ -1204,7 +1195,7 @@
   $("menuBtn").addEventListener("click", function () { $("menuScrim").hidden = false; });
   $("menuClose").addEventListener("click", function () { $("menuScrim").hidden = true; });
 
-  [$("detailScrim"), $("editorScrim"), $("diaperScrim"), $("menuScrim")].forEach(function (scrim) {
+  [$("editorScrim"), $("diaperScrim"), $("menuScrim")].forEach(function (scrim) {
     scrim.addEventListener("click", function (ev) {
       if (ev.target === scrim) scrim.hidden = true;
     });
