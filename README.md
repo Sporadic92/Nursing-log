@@ -172,6 +172,23 @@ If it's been more than about ten days since the last backup, a small dot appears
 button and the menu says how long it's been. That's the whole reminder — no banners, no popups.
 Backing up clears it.
 
+## If something goes wrong with the log
+
+If the app ever finds part of your log unreadable, a **red line appears at the top of the
+screen**. It's the only warning of its kind in the app, and it means what it says:
+
+- **Nothing has been deleted.** The part it couldn't read is set aside exactly as it was, and
+  anything you log from now on saves normally.
+- **Tap the red line.** It offers to **save a copy** of whatever couldn't be read — do that first
+  and send it somewhere safe, in case it can be recovered later.
+- **Then use Restore from backup** with your most recent backup file to bring those records back.
+  That's what the backup is for, and it's why the app nags about making one.
+- Once you've saved a copy, **Remove it from this phone** clears the warning. It offers Undo.
+
+The one thing that would previously have lost records for good — the app quietly showing an empty
+log and then saving over it — can't happen now: it refuses to write over anything it couldn't
+read.
+
 ## Two phones, one log
 
 If both of you want to log things, run the app on both phones and send records over as a text.

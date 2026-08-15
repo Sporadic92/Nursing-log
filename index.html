@@ -89,6 +89,18 @@
     border-radius: var(--radius); padding: 18px; margin-bottom: 14px;
   }
 
+  /* The only alarming thing on the main screen, and it earns that: it is the
+     one problem she has no other way of seeing, and the one that can't be
+     undone once a save has landed on top of it. */
+  .alert {
+    width: 100%; display: grid; gap: 3px; text-align: left; font-family: inherit;
+    background: var(--surface); border: 1px solid var(--danger);
+    border-left-width: 4px; border-radius: var(--radius);
+    padding: 14px 16px; margin-bottom: 14px; cursor: pointer;
+  }
+  .alert b { color: var(--danger); font-size: 15px; font-weight: 600; }
+  .alert small { color: var(--muted); font-size: 13px; line-height: 1.4; }
+
   .since { text-align: center; color: var(--muted); font-size: 15px; }
   .since b { color: var(--text); font-weight: 600; }
   .since-sub { text-align: center; color: var(--muted); font-size: 13px; margin-top: 3px; }
@@ -327,6 +339,11 @@
     </div>
   </header>
 
+  <button class="alert" id="dataAlert" hidden>
+    <b>Part of your log could not be read</b>
+    <small id="dataAlertLine"></small>
+  </button>
+
   <!-- Feeding -->
   <section class="card">
     <div id="idleView">
@@ -558,6 +575,22 @@
   </div>
 </div>
 
+<!-- Unreadable data -->
+<div class="scrim" id="rescueScrim" hidden>
+  <div class="sheet" role="dialog" aria-modal="true">
+    <h3>Some of your log couldn't be read</h3>
+    <p class="guide-note" id="rescueWhat"></p>
+    <p class="guide-note" id="rescueRestore">To get those records back, use
+      <b>Restore from backup</b> with your most recent backup file. Save a copy of the set-aside
+      data first — it may be recoverable.</p>
+    <button class="menu-item" id="rescueSave">Save a copy of it<small>Sends it on like a backup, so it can be looked at later</small></button>
+    <button class="menu-item" id="rescueDrop">Remove it from this phone<small>Once you've saved a copy. Offers Undo</small></button>
+    <div class="sheet-actions">
+      <button class="btn wide" id="rescueClose">Close</button>
+    </div>
+  </div>
+</div>
+
 <!-- Paste an update from the other phone -->
 <div class="scrim" id="pasteScrim" hidden>
   <div class="sheet" role="dialog" aria-modal="true">
@@ -615,6 +648,7 @@
   var FILTER_KEY = "nursinglog.filter.v1";
   var BACKUP_KEY = "nursinglog.backup.v1";
   var HAPTIC_KEY = "nursinglog.haptics.v1";
+  var RESCUE_PREFIX = "nursinglog.rescue.";
   var BACKUP_NUDGE_MS = 10 * 86400000;
   var SIDE_NAME = { L: "Left", R: "Right", B: "Both" };
 
@@ -734,6 +768,11 @@
      up an update yet. Add a new entry at the top whenever you ship, and bump
      CACHE in sw.js in the same commit. */
   var VERSIONS = [
+    { v: "1.14", date: "15 Aug 2026", notes: [
+      "If part of the log ever can't be read, the app now says so instead of showing an empty list — and it sets that part aside untouched rather than letting the next thing you log save over it.",
+      "A red line at the top is the only warning of its kind in the app. Tap it to save a copy of whatever couldn't be read, and to get your records back with Restore from backup.",
+      "Individual records it can't make sense of are kept rather than quietly dropped."
+    ] },
     { v: "1.13", date: "15 Aug 2026", notes: [
       "Two phones, one log. Whoever logs a nappy or a feed can send the last few days as a text message, and the other phone adds them under Paste an update.",
       "It only ever adds. Anything already in your log is left exactly as it was, so nothing you wrote can be overwritten by what arrives — and sending the same days twice changes nothing.",
@@ -891,27 +930,97 @@
 
   /* ---------------- storage ---------------- */
 
-  function readList(key, normalize) {
+  /* Keys whose stored text we could not read and could not copy anywhere safe.
+     Nothing may be written over them. */
+  var blockedKeys = {};
+
+  /* Records that read back but don't normalize, held aside so a save doesn't
+     drop them. Keyed by storage key. */
+  var quarantine = {};
+
+  /* Copy unreadable text to a key of its own and prove the copy stuck. A copy
+     that only half wrote is worse than none, since the next step lets go of the
+     original. */
+  function stashCopy(key, raw) {
+    var name = RESCUE_PREFIX + key + "." + Date.now();
+    var envelope = JSON.stringify({
+      app: "nursing-log", kind: "unreadable", key: key,
+      rescued: new Date().toISOString(), raw: raw
+    });
     try {
-      var raw = localStorage.getItem(key);
-      var list = raw ? JSON.parse(raw) : [];
-      if (!Array.isArray(list)) return [];
-      var out = [];
-      for (var i = 0; i < list.length; i++) {
-        var item = normalize(list[i]);
-        if (item) out.push(item);
-      }
-      return out;
+      localStorage.setItem(name, envelope);
+      if (localStorage.getItem(name) !== envelope) throw new Error("the copy did not stick");
+      return true;
     } catch (err) {
-      return [];
+      try { localStorage.removeItem(name); } catch (err2) { /* nothing further to try */ }
+      return false;
     }
   }
 
-  function writeList(key, list) {
+  function setAside(key, raw) {
+    if (!stashCopy(key, raw)) return false;
     try {
-      localStorage.setItem(key, JSON.stringify(list));
+      localStorage.removeItem(key);
+    } catch (err) {
+      return false;
+    }
+    return true;
+  }
+
+  /* This used to hand back an empty list for anything it couldn't parse, which
+     looked exactly like an empty log — and the next save then wrote over the
+     only copy of what it couldn't read. A log with no server behind it cannot
+     afford that, so unreadable text is now moved somewhere safe before the app
+     carries on, and if it can't be moved, nothing may overwrite it. */
+  function readList(key, normalize) {
+    var raw;
+    try {
+      raw = localStorage.getItem(key);
+    } catch (err) {
+      blockedKeys[key] = true;   /* can't even look; certainly don't write */
+      return [];
+    }
+    if (!raw) return [];
+
+    var list;
+    try {
+      list = JSON.parse(raw);
+    } catch (err) {
+      list = null;
+    }
+
+    if (!Array.isArray(list)) {
+      if (!setAside(key, raw)) blockedKeys[key] = true;
+      return [];
+    }
+
+    var out = [], bad = [];
+    for (var i = 0; i < list.length; i++) {
+      var item = normalize(list[i]);
+      if (item) out.push(item);
+      else if (list[i] !== null && list[i] !== undefined) bad.push(list[i]);
+    }
+    /* A record this version can't make sense of is still a record. Keeping it
+       costs a few bytes; dropping it is the same silent deletion in miniature. */
+    if (bad.length) quarantine[key] = bad;
+    return out;
+  }
+
+  /* Says whether the write actually happened. Callers must not report success
+     on a save that didn't land — telling her a feed was saved when it wasn't is
+     how a lost record goes unnoticed until it matters. */
+  function writeList(key, list) {
+    if (blockedKeys[key]) {
+      toast("Not saved — see the warning at the top");
+      return false;
+    }
+    var keep = quarantine[key];
+    try {
+      localStorage.setItem(key, JSON.stringify(keep && keep.length ? list.concat(keep) : list));
+      return true;
     } catch (err) {
       toast("Could not save — phone storage may be full");
+      return false;
     }
   }
 
@@ -934,22 +1043,27 @@
   function loadDiapers() { return readList(DIAPERS_KEY, normalizeDiaper); }
   function loadMeds() { return readList(MEDS_KEY, normalizeMed); }
 
+  /* Memory follows storage, not the other way round: if the write is refused,
+     the list on screen keeps matching what is actually on the phone. */
   function saveFeeds(list) {
     list.sort(function (a, b) { return b.start - a.start; });
+    if (!writeList(FEEDS_KEY, list)) return false;
     feeds = list;
-    writeList(FEEDS_KEY, list);
+    return true;
   }
 
   function saveDiapers(list) {
     list.sort(function (a, b) { return b.time - a.time; });
+    if (!writeList(DIAPERS_KEY, list)) return false;
     diapers = list;
-    writeList(DIAPERS_KEY, list);
+    return true;
   }
 
   function saveMeds(list) {
     list.sort(function (a, b) { return b.time - a.time; });
+    if (!writeList(MEDS_KEY, list)) return false;
     meds = list;
-    writeList(MEDS_KEY, list);
+    return true;
   }
 
   /* Active session: { start, side, leftSec, rightSec, segStart }.
@@ -973,8 +1087,13 @@
 
   function setActive(a) {
     active = a;
-    if (a) localStorage.setItem(ACTIVE_KEY, JSON.stringify(a));
-    else localStorage.removeItem(ACTIVE_KEY);
+    try {
+      if (a) localStorage.setItem(ACTIVE_KEY, JSON.stringify(a));
+      else localStorage.removeItem(ACTIVE_KEY);
+    } catch (err) {
+      /* The timer runs from memory regardless; it just won't survive a reload. */
+      toast("The timer may not survive closing the app — storage is full");
+    }
   }
 
   var feeds = loadFeeds();
@@ -1350,6 +1469,7 @@
   }
 
   function renderAll() {
+    renderRescue();
     renderFeedCard();
     renderDiaperCard();
     renderMedCard();
@@ -1434,7 +1554,10 @@
 
     var list = feeds.slice();
     list.push(entry);
-    saveFeeds(list);
+    /* Nothing written means nothing to show for the feed, so leave it running
+       rather than ending it into thin air. writeList has already said why. */
+    if (!saveFeeds(list)) return;
+
     setActive(null);
     renderAll();
     wakeScreen();
@@ -1445,7 +1568,7 @@
        and all, so a mis-tap costs nothing. */
     toast("Saved " + durationText(feedMinutes(entry)) + " · " + SIDE_NAME[feedSide(entry)], function () {
       if (active) { toast("A feeding is already running"); return; }
-      saveFeeds(feeds.filter(function (e) { return e.id !== entry.id; }));
+      if (!saveFeeds(feeds.filter(function (e) { return e.id !== entry.id; }))) return;
       setActive({
         start: entry.start,
         side: entry.endSide,
@@ -1639,7 +1762,7 @@
 
     var list = feeds.filter(function (e) { return e.id !== editingFeedId; });
     list.push(record);
-    saveFeeds(list);
+    if (!saveFeeds(list)) return;
 
     $("editorScrim").hidden = true;
     renderAll();
@@ -1652,14 +1775,14 @@
     var gone = findById(feeds, "id", editingFeedId);
     if (!gone) return;
 
-    saveFeeds(feeds.filter(function (e) { return e.id !== gone.id; }));
+    if (!saveFeeds(feeds.filter(function (e) { return e.id !== gone.id; }))) return;
     $("editorScrim").hidden = true;
     renderAll();
 
     toast("Feeding deleted", function () {
       var list = feeds.slice();
       list.push(gone);
-      saveFeeds(list);
+      if (!saveFeeds(list)) return;
       renderAll();
       toast("Feeding restored");
     });
@@ -1768,7 +1891,7 @@
 
     var list = diapers.filter(function (d) { return d.id !== editingDiaperId; });
     list.push(record);
-    saveDiapers(list);
+    if (!saveDiapers(list)) return;
 
     scrim.hidden = true;
     renderAll();
@@ -1779,14 +1902,14 @@
     var gone = findById(diapers, "id", editingDiaperId);
     if (!gone) return;
 
-    saveDiapers(diapers.filter(function (d) { return d.id !== gone.id; }));
+    if (!saveDiapers(diapers.filter(function (d) { return d.id !== gone.id; }))) return;
     $("diaperScrim").hidden = true;
     renderAll();
 
     toast("Diaper deleted", function () {
       var list = diapers.slice();
       list.push(gone);
-      saveDiapers(list);
+      if (!saveDiapers(list)) return;
       renderAll();
       toast("Diaper restored");
     });
@@ -1904,7 +2027,7 @@
 
     var list = meds.filter(function (m) { return m.id !== editingMedId; });
     list.push(record);
-    saveMeds(list);
+    if (!saveMeds(list)) return;
 
     $("medScrim").hidden = true;
     renderAll();
@@ -1915,14 +2038,14 @@
     var gone = findById(meds, "id", editingMedId);
     if (!gone) return;
 
-    saveMeds(meds.filter(function (m) { return m.id !== gone.id; }));
+    if (!saveMeds(meds.filter(function (m) { return m.id !== gone.id; }))) return;
     $("medScrim").hidden = true;
     renderAll();
 
     toast("Dose deleted", function () {
       var list = meds.slice();
       list.push(gone);
-      saveMeds(list);
+      if (!saveMeds(list)) return;
       renderAll();
       toast("Dose restored");
     });
@@ -2317,7 +2440,7 @@
   $("menuClose").addEventListener("click", function () { $("menuScrim").hidden = true; });
 
   [$("editorScrim"), $("diaperScrim"), $("medScrim"), $("menuScrim"), $("logScrim"),
-   $("guideScrim"), $("pasteScrim")].forEach(function (scrim) {
+   $("guideScrim"), $("pasteScrim"), $("rescueScrim")].forEach(function (scrim) {
     scrim.addEventListener("click", function (ev) {
       if (ev.target === scrim) scrim.hidden = true;
     });
@@ -2519,6 +2642,156 @@
 
   $("importJson").addEventListener("click", function () { $("fileInput").click(); });
 
+  /* ---------------- unreadable data ---------------- */
+
+  var LIST_NAME = {};
+  LIST_NAME[FEEDS_KEY] = "feedings";
+  LIST_NAME[DIAPERS_KEY] = "diapers";
+  LIST_NAME[MEDS_KEY] = "medicines";
+
+  function listFor(key) {
+    return key === FEEDS_KEY ? feeds : key === DIAPERS_KEY ? diapers : meds;
+  }
+
+  function rescueKeys() {
+    var keys = [];
+    try {
+      for (var i = 0; i < localStorage.length; i++) {
+        var k = localStorage.key(i);
+        if (k && k.indexOf(RESCUE_PREFIX) === 0) keys.push(k);
+      }
+    } catch (err) { /* unreadable storage; the alert just won't list anything */ }
+    return keys;
+  }
+
+  function ownKeys(obj) {
+    var out = [];
+    for (var k in obj) if (Object.prototype.hasOwnProperty.call(obj, k)) out.push(k);
+    return out;
+  }
+
+  function quarantinedCount() {
+    var keys = ownKeys(quarantine), n = 0;
+    for (var i = 0; i < keys.length; i++) n += quarantine[keys[i]].length;
+    return n;
+  }
+
+  function renderRescue() {
+    var aside = rescueKeys().length;
+    var stuck = ownKeys(blockedKeys).length;
+    var kept = quarantinedCount();
+
+    if (!aside && !stuck && !kept) { $("dataAlert").hidden = true; return; }
+    $("dataAlert").hidden = false;
+
+    /* The line on the card has to fit at a glance; the sheet is where it gets
+       explained. Restoring is the answer to the first two and not to the third,
+       where the records are still on the phone and simply aren't readable. */
+    var short, full, restore = true;
+    if (stuck) {
+      short = "Nothing new is being saved to it, so it can't be written over. Tap to see what to do.";
+      full = "It couldn't be read and couldn't be copied anywhere either, so the app has stopped " +
+        "saving to that list rather than write over it. Save a copy below, then remove it — " +
+        "saving works again after that.";
+    } else if (aside) {
+      short = "It has been set aside, not deleted. Tap to save a copy.";
+      full = "It has been set aside exactly as it was, and anything you log from now on saves " +
+        "normally.";
+    } else {
+      short = kept + (kept === 1 ? " record is" : " records are") +
+        " being kept but not shown. Tap for what to do.";
+      full = kept + (kept === 1 ? " record" : " records") + " in your log can't be read by this " +
+        "version of the app. " + (kept === 1 ? "It is" : "They are") + " being kept where " +
+        (kept === 1 ? "it is" : "they are") + " rather than dropped, and nothing else is affected.";
+      restore = false;
+    }
+
+    $("dataAlertLine").textContent = short;
+    $("rescueWhat").textContent = full;
+    $("rescueRestore").hidden = !restore;
+  }
+
+  $("dataAlert").addEventListener("click", function () {
+    renderRescue();
+    $("rescueScrim").hidden = false;
+  });
+
+  $("rescueClose").addEventListener("click", function () { $("rescueScrim").hidden = true; });
+
+  /* Everything unreadable in one file: the text that was set aside, whatever is
+     still stuck in place, and the individual records being held back. */
+  $("rescueSave").addEventListener("click", function () {
+    var out = {
+      app: "nursing-log", kind: "unreadable-data", saved: new Date().toISOString(),
+      setAside: [], stuck: [], kept: []
+    };
+
+    rescueKeys().forEach(function (k) {
+      out.setAside.push({ key: k, value: localStorage.getItem(k) });
+    });
+    ownKeys(blockedKeys).forEach(function (k) {
+      var raw = null;
+      try { raw = localStorage.getItem(k); } catch (err) { /* leave it null */ }
+      out.stuck.push({ key: k, value: raw });
+    });
+    ownKeys(quarantine).forEach(function (k) {
+      out.kept.push({ key: k, records: quarantine[k] });
+    });
+
+    deliver("nursing-log-unreadable-" + stamp() + ".json", JSON.stringify(out, null, 2),
+      "application/json");
+  });
+
+  /* Undo matters more here than anywhere else in the app: this is the button
+     that finally lets go of records she may still want. */
+  $("rescueDrop").addEventListener("click", function () {
+    var undo = { copies: [], stuck: [], kept: [] };
+
+    rescueKeys().forEach(function (k) {
+      undo.copies.push({ key: k, value: localStorage.getItem(k) });
+      localStorage.removeItem(k);
+    });
+
+    ownKeys(blockedKeys).forEach(function (k) {
+      var raw = null;
+      try { raw = localStorage.getItem(k); localStorage.removeItem(k); } catch (err) { /* gone anyway */ }
+      undo.stuck.push({ key: k, value: raw });
+      delete blockedKeys[k];
+    });
+
+    ownKeys(quarantine).forEach(function (k) {
+      undo.kept.push({ key: k, records: quarantine[k] });
+      delete quarantine[k];
+      writeList(k, listFor(k));           /* rewrite without the held-back records */
+    });
+
+    if (!undo.copies.length && !undo.stuck.length && !undo.kept.length) {
+      toast("There is nothing set aside to remove");
+      return;
+    }
+
+    $("rescueScrim").hidden = true;
+    renderRescue();
+
+    toast("Removed", function () {
+      undo.copies.forEach(function (item) {
+        try { localStorage.setItem(item.key, item.value); } catch (err) { /* no room to put it back */ }
+      });
+      /* Put it back as a set-aside copy rather than into the key it came from:
+         she may have logged something there in the meantime, and restoring the
+         text it couldn't read would only break the same list a second time. */
+      undo.stuck.forEach(function (item) {
+        if (item.value !== null) stashCopy(item.key, item.value);
+      });
+      undo.kept.forEach(function (item) {
+        quarantine[item.key] = item.records;
+        writeList(item.key, listFor(item.key));
+      });
+      renderRescue();
+      toast("Put back");
+    });
+  });
+
   /* ---------------- updates from the other phone ---------------- */
 
   /* Two phones, no server: he logs what he does on his, sends the last few days
@@ -2634,64 +2907,64 @@
      message someone pasted in. Both are the same JSON, so both land here.
      Returns the number of records added, or null if it isn't ours at all. */
   function mergeRecords(data) {
-      var inFeeds = Array.isArray(data) ? data : data.entries;
-      var inDiapers = data.diapers;
-      var inMeds = data.meds;
-      if (!Array.isArray(inFeeds) && !Array.isArray(inDiapers) && !Array.isArray(inMeds)) {
-        return null;
-      }
+    var inFeeds = Array.isArray(data) ? data : data.entries;
+    var inDiapers = data.diapers;
+    var inMeds = data.meds;
+    if (!Array.isArray(inFeeds) && !Array.isArray(inDiapers) && !Array.isArray(inMeds)) {
+      return null;
+    }
 
-      var added = 0;
+    var added = 0;
 
-      if (Array.isArray(inFeeds)) {
-        var seenF = {};
-        feeds.forEach(function (e) { seenF[e.start + "|" + e.leftSec + "|" + e.rightSec] = true; });
-        var fList = feeds.slice();
-        inFeeds.forEach(function (raw) {
-          var e = normalizeFeed(raw);
-          if (!e) return;
-          var key = e.start + "|" + e.leftSec + "|" + e.rightSec;
-          if (seenF[key]) return;
-          seenF[key] = true;
-          fList.push(e);
-          added++;
-        });
-        saveFeeds(fList);
-      }
+    if (Array.isArray(inFeeds)) {
+      var seenF = {}, fresh = 0;
+      feeds.forEach(function (e) { seenF[e.start + "|" + e.leftSec + "|" + e.rightSec] = true; });
+      var fList = feeds.slice();
+      inFeeds.forEach(function (raw) {
+        var e = normalizeFeed(raw);
+        if (!e) return;
+        var key = e.start + "|" + e.leftSec + "|" + e.rightSec;
+        if (seenF[key]) return;
+        seenF[key] = true;
+        fList.push(e);
+        fresh++;
+      });
+      if (saveFeeds(fList)) added += fresh;
+    }
 
-      if (Array.isArray(inDiapers)) {
-        var seenD = {};
-        diapers.forEach(function (d) { seenD[d.time + "|" + d.pee + "|" + d.poop] = true; });
-        var dList = diapers.slice();
-        inDiapers.forEach(function (raw) {
-          var d = normalizeDiaper(raw);
-          if (!d) return;
-          var key = d.time + "|" + d.pee + "|" + d.poop;
-          if (seenD[key]) return;
-          seenD[key] = true;
-          dList.push(d);
-          added++;
-        });
-        saveDiapers(dList);
-      }
+    if (Array.isArray(inDiapers)) {
+      var seenD = {}, freshD = 0;
+      diapers.forEach(function (d) { seenD[d.time + "|" + d.pee + "|" + d.poop] = true; });
+      var dList = diapers.slice();
+      inDiapers.forEach(function (raw) {
+        var d = normalizeDiaper(raw);
+        if (!d) return;
+        var key = d.time + "|" + d.pee + "|" + d.poop;
+        if (seenD[key]) return;
+        seenD[key] = true;
+        dList.push(d);
+        freshD++;
+      });
+      if (saveDiapers(dList)) added += freshD;
+    }
 
-      if (Array.isArray(inMeds)) {
-        var seenM = {};
-        meds.forEach(function (m) { seenM[m.time + "|" + m.name + "|" + m.dose] = true; });
-        var mList = meds.slice();
-        inMeds.forEach(function (raw) {
-          var m = normalizeMed(raw);
-          if (!m) return;
-          var key = m.time + "|" + m.name + "|" + m.dose;
-          if (seenM[key]) return;
-          seenM[key] = true;
-          mList.push(m);
-          added++;
-        });
-        saveMeds(mList);
-      }
+    if (Array.isArray(inMeds)) {
+      var seenM = {}, freshM = 0;
+      meds.forEach(function (m) { seenM[m.time + "|" + m.name + "|" + m.dose] = true; });
+      var mList = meds.slice();
+      inMeds.forEach(function (raw) {
+        var m = normalizeMed(raw);
+        if (!m) return;
+        var key = m.time + "|" + m.name + "|" + m.dose;
+        if (seenM[key]) return;
+        seenM[key] = true;
+        mList.push(m);
+        freshM++;
+      });
+      if (saveMeds(mList)) added += freshM;
+    }
 
-      return added;
+    return added;
   }
 
   $("fileInput").addEventListener("change", function () {
@@ -2910,7 +3183,7 @@
   function sheetOpen() {
     return !$("editorScrim").hidden || !$("diaperScrim").hidden || !$("medScrim").hidden ||
       !$("menuScrim").hidden || !$("logScrim").hidden || !$("guideScrim").hidden ||
-      !$("pasteScrim").hidden;
+      !$("pasteScrim").hidden || !$("rescueScrim").hidden;
   }
 
   function paintVeil() {

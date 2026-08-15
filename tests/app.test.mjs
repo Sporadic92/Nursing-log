@@ -1146,6 +1146,140 @@ for (let i = 0; i < 4 && await feedsNow() > hers; i++) {
 check('her log is back to her own records', await feedsNow() === hers);
 check('and unchanged by all of it', await page.textContent('#history') === herNotes);
 
+// ---------- unreadable data is never written over ----------
+/* The bug this guards: a list that wouldn't parse read back as empty, and the
+   next save then overwrote the only copy of it. Each case gets its own context
+   so a broken log can't leak into the rest of the suite. */
+const FEEDS_KEY = 'nursinglog.entries.v1';
+const brokenPage = async (raw, init) => {
+  const c = await browser.newContext({ viewport: { width: 412, height: 915 }, hasTouch: true });
+  await c.addInitScript(wakeStub, 600000);
+  if (init) await c.addInitScript(init);
+  const p = await c.newPage();
+  await p.goto(BASE, { waitUntil: 'networkidle' });
+  await p.evaluate(([k, v]) => localStorage.setItem(k, v), [FEEDS_KEY, raw]);
+  await p.reload({ waitUntil: 'networkidle' });
+  return { c, p };
+};
+const rescued = p => p.evaluate(() => Object.keys(localStorage)
+  .filter(k => k.indexOf('nursinglog.rescue.') === 0)
+  .map(k => localStorage.getItem(k)));
+
+// 1. text that won't parse at all
+const bad = await brokenPage('[{"start":1755200000000,"leftSec":600,"rightSec":0},{"start":17');
+check('the app still opens on a broken log', await bad.p.isVisible('#idleView'));
+check('it says so instead of showing an empty log', await bad.p.isVisible('#dataAlert'));
+check('and says nothing was deleted',
+  (await bad.p.textContent('#dataAlertLine')).includes('set aside, not deleted'));
+
+let aside = await rescued(bad.p);
+check('the unreadable text is kept', aside.length === 1);
+check('kept byte for byte', JSON.parse(aside[0]).raw.endsWith('"start":17'));
+check('and labelled with the list it came from', JSON.parse(aside[0]).key === FEEDS_KEY);
+
+// the regression itself: logging something must not destroy what was set aside
+await bad.p.click('[data-start="L"]');
+await bad.p.waitForTimeout(1100);
+await bad.p.click('#stopBtn');
+check('logging still works', (await bad.p.$$('.entry')).length === 1);
+aside = await rescued(bad.p);
+check('the set-aside copy survives a save', aside.length === 1);
+check('still byte for byte', JSON.parse(aside[0]).raw.endsWith('"start":17'));
+await bad.p.reload({ waitUntil: 'networkidle' });
+check('and survives a reload', (await rescued(bad.p)).length === 1);
+check('without rescuing itself a second time', (await rescued(bad.p)).length === 1);
+check('the new feed is still there', (await bad.p.$$('.entry')).length === 1);
+check('the warning is still up', await bad.p.isVisible('#dataAlert'));
+
+// saving a copy hands over everything unreadable
+await bad.p.evaluate(() => {
+  window.__saved = [];
+  Object.defineProperty(navigator, 'share', {
+    configurable: true, value: d => { window.__saved.push(d); return Promise.resolve(); },
+  });
+});
+await bad.p.click('#dataAlert');
+check('the warning opens the sheet', await bad.p.isVisible('#rescueScrim'));
+check('the sheet points at Restore from backup',
+  (await bad.p.textContent('#rescueScrim')).includes('Restore from backup'));
+await bad.p.screenshot({ path: `${SHOTS}/data-alert.png` });
+await bad.p.click('#rescueSave');
+await bad.p.waitForTimeout(200);
+check('a copy can be sent off', await bad.p.evaluate(() => window.__saved.length === 1));
+
+// removing it is deliberate and undoable
+await bad.p.click('#rescueDrop');
+check('removing clears the warning', await bad.p.isHidden('#dataAlert'));
+check('and the set-aside copy is gone', (await rescued(bad.p)).length === 0);
+await bad.p.click('#toastAction');
+check('undo puts it back', (await rescued(bad.p)).length === 1);
+check('with the warning', await bad.p.isVisible('#dataAlert'));
+check('and the same bytes', JSON.parse((await rescued(bad.p))[0]).raw.endsWith('"start":17'));
+await bad.c.close();
+
+// 2. valid JSON that isn't a list
+const notList = await brokenPage('{"entries":"gone"}');
+check('a log that is not a list is set aside too', await notList.p.isVisible('#dataAlert'));
+check('and kept', (await rescued(notList.p)).length === 1);
+await notList.c.close();
+
+// 3. one record in a good list that cannot be read
+const partial = await brokenPage(JSON.stringify([
+  { id: 'good', start: Date.now() - 3600000, leftSec: 600, rightSec: 0, endSide: 'L', notes: '' },
+  { id: 'odd', start: 'not a number', leftSec: 300, rightSec: 0 },
+]));
+check('the readable record shows', (await partial.p.$$('.entry')).length === 1);
+check('the odd one is announced', await partial.p.isVisible('#dataAlert'));
+check('and counted', (await partial.p.textContent('#dataAlertLine')).includes('1 record is'));
+check('nothing is set aside for it', (await rescued(partial.p)).length === 0);
+
+await partial.p.click('[data-diaper="pee"]');
+await partial.p.click('#diaperSave');
+await partial.p.click('[data-start="R"]');
+await partial.p.waitForTimeout(1100);
+await partial.p.click('#stopBtn');
+const stored = await partial.p.evaluate(k => JSON.parse(localStorage.getItem(k)), FEEDS_KEY);
+check('the unreadable record is still in storage after saves',
+  stored.some(e => e && e.start === 'not a number'));
+check('alongside the readable ones', stored.filter(e => typeof e.start === 'number').length === 2);
+await partial.p.reload({ waitUntil: 'networkidle' });
+check('it survives a reload', (await partial.p.evaluate(k => JSON.parse(localStorage.getItem(k)), FEEDS_KEY))
+  .some(e => e && e.start === 'not a number'));
+check('and is still not shown', (await partial.p.$$('.entry')).length === 3);
+await partial.c.close();
+
+// 4. worst case: it can't even be copied anywhere, so nothing may write over it
+const stuckRaw = '[{"start":1755200000000,"leftSec":600},{"bro';
+const stuck = await brokenPage(stuckRaw, () => {
+  const real = Storage.prototype.setItem;
+  Storage.prototype.setItem = function (k, v) {
+    if (String(k).indexOf('nursinglog.rescue.') === 0) throw new Error('no room');
+    return real.call(this, k, v);
+  };
+});
+check('a log that cannot be copied is left where it is',
+  await stuck.p.evaluate(k => localStorage.getItem(k), FEEDS_KEY) === stuckRaw);
+check('and is announced', await stuck.p.isVisible('#dataAlert'));
+check('as not being saved to',
+  (await stuck.p.textContent('#dataAlertLine')).includes("can't be written over"));
+
+await stuck.p.click('[data-start="L"]');
+await stuck.p.waitForTimeout(1100);
+await stuck.p.click('#stopBtn');
+check('a save is refused rather than silently losing it',
+  (await stuck.p.textContent('#toastText')).includes('Not saved'));
+check('and is not dressed up as a save', !(await stuck.p.textContent('#toastText')).includes('Saved '));
+/* Nothing was written, so the feed stays on the clock rather than ending into
+   thin air — she can still read the minutes off the screen. */
+check('the feed is still running', await stuck.p.isVisible('#runningView'));
+check('and nothing appeared in the timeline', (await stuck.p.$$('.entry')).length === 0);
+check('the unreadable text is untouched',
+  await stuck.p.evaluate(k => localStorage.getItem(k), FEEDS_KEY) === stuckRaw);
+await stuck.c.close();
+
+// 5. a healthy log says nothing at all
+check('no warning on a good log', await page.isHidden('#dataAlert'));
+
 // ---------- screen wake and dimming ----------
 const wake = () => page.evaluate(() => window.__wake);
 check('no wake lock while idle', !(await wake()).held);
