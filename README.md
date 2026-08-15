@@ -94,6 +94,10 @@ site, or by uninstalling.
 
 Tap the **⚙** button in the top-right for:
 
+- **Summary for the doctor (PDF)** — one page covering the last two weeks: feeds and minutes per
+  day, average feed length, longest gap between feeds, wet and dirty nappies per day, a chart of
+  each day, and a day-by-day table. Any notes you wrote go on a second page. It opens the share
+  sheet, so you can email it ahead of an appointment or show it on the phone.
 - **Export spreadsheet (CSV)** — feedings and diapers in one chronological sheet, with columns
   for per-side minutes, ending side, pee/poop, and poop size. Opens in Excel or Google Sheets, handy for the pediatrician.
 - **Save backup file** — a `.json` file with everything. On the phone this opens Android's share

@@ -392,6 +392,68 @@ check('csv per-side columns', csvText.includes('"Feeding","Left","22","0","22"')
 check('csv escapes quotes in notes', csvText.includes('""good"" latch'));
 check('csv oldest first', csvRows[1].includes('3:20 AM'));
 
+// ---------- doctor's summary (PDF) ----------
+await page.click('#menuBtn');
+const [pdfDl] = await Promise.all([page.waitForEvent('download'), page.click('#exportPdf')]);
+const pdfPath = join(SHOTS, 'summary.pdf');
+await pdfDl.saveAs(pdfPath);
+const pdf = (await readFile(pdfPath)).toString('latin1');
+
+check('pdf filename', /nursing-log-summary-\d{8}\.pdf/.test(pdfDl.suggestedFilename()));
+check('pdf header', pdf.startsWith('%PDF-1.'));
+check('pdf ends properly', pdf.trimEnd().endsWith('%%EOF'));
+
+// a wrong byte offset yields a file that opens blank in some readers and fine in others
+const sx = pdf.match(/startxref\s+(\d+)\s+%%EOF/);
+check('startxref present', !!sx);
+check('startxref lands on the xref table', pdf.slice(+sx[1], +sx[1] + 4) === 'xref');
+
+const xhead = pdf.slice(+sx[1]).match(/^xref\s+0 (\d+)\s+/);
+const objCount = +xhead[1];
+const xbody = pdf.slice(+sx[1] + xhead[0].length);
+let offsetsOk = true, lengthsOk = true;
+for (let n = 1; n < objCount; n++) {
+  if (!pdf.startsWith(`${n} 0 obj`, +xbody.slice(n * 20, n * 20 + 10))) offsetsOk = false;
+}
+check(`every object offset is right (${objCount - 1} objects)`, offsetsOk);
+check('free entry leads the table', xbody.startsWith('0000000000 65535 f'));
+check('trailer size matches', pdf.includes(`/Size ${objCount} /Root 1 0 R`));
+
+for (const m of pdf.matchAll(/<< \/Length (\d+) >>\s*stream\n/g)) {
+  const start = m.index + m[0].length;
+  if (pdf.indexOf('\nendstream', start) - start !== +m[1]) lengthsOk = false;
+}
+check('declared stream lengths match the streams', lengthsOk);
+
+check('fonts are the built-in ones, nothing embedded',
+  pdf.includes('/BaseFont /Helvetica') && pdf.includes('/BaseFont /Helvetica-Bold')
+  && !pdf.includes('/FontFile'));
+check('one or two pages', /\/Count [12][^0-9]/.test(pdf));
+check('pdf has the title', pdf.includes('Feeding & Diaper Summary'));
+check('pdf has the at-a-glance tiles',
+  ['Feeds per day', 'Time per day', 'Average feed', 'Longest gap', 'Wet per day', 'Dirty per day']
+    .every(k => pdf.includes(k)));
+check('pdf has the day table', pdf.includes('Day by day') && pdf.includes('Left / Right'));
+check('pdf carries notes through', pdf.includes('Seedy, mustard colored'));
+check('pdf page numbering', pdf.includes('Page 1 of 2') && pdf.includes('Page 2 of 2'));
+check('pdf escapes parentheses in notes', !/[^\\]\(\)/.test(pdf.split('stream')[1] || ''));
+await page.click('#menuBtn');
+check('pdf did not count as a backup', !(await page.textContent('#backupStatus')).includes('today'));
+await page.click('#menuClose');
+
+// nothing logged yet means nothing to summarise
+const emptyCtx = await browser.newContext({ viewport: { width: 412, height: 915 } });
+const ep = await emptyCtx.newPage();
+let emptyDownloads = 0;
+ep.on('download', () => { emptyDownloads++; });
+await ep.goto(BASE, { waitUntil: 'networkidle' });
+await ep.click('#menuBtn');
+await ep.click('#exportPdf');
+await ep.waitForTimeout(300);
+check('empty log offers no summary', (await ep.textContent('#toastText')).includes('Nothing to summarise'));
+check('empty log produces no file', emptyDownloads === 0);
+await emptyCtx.close();
+
 // ---------- JSON round trip ----------
 await page.click('#menuBtn');
 const [json] = await Promise.all([page.waitForEvent('download'), page.click('#exportJson')]);
