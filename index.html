@@ -306,6 +306,14 @@
       <div><label for="fRight">Minutes on right</label><input type="number" id="fRight" min="0" max="600" inputmode="numeric" step="1"></div>
     </div>
 
+    <div id="endWrap" hidden>
+      <label>Ended on</label>
+      <div class="row-2">
+        <button class="side-btn" data-end="L">Left<small>finished here</small></button>
+        <button class="side-btn" data-end="R">Right<small>finished here</small></button>
+      </div>
+    </div>
+
     <label for="fNotes">Notes</label>
     <textarea id="fNotes" placeholder="Fussy, spit up, fell asleep, vitamin D&hellip;"></textarea>
 
@@ -374,7 +382,7 @@
 
   /* ---------------- model ---------------- */
 
-  /* A feeding is { id, start, leftSec, rightSec, notes }.
+  /* A feeding is { id, start, leftSec, rightSec, endSide, notes }.
      Older versions stored { minutes, side }, so migrate those on the way in. */
   function normalizeFeed(e) {
     if (!e || typeof e.start !== "number") return null;
@@ -390,11 +398,22 @@
       else { leftSec = secs; rightSec = 0; }
     }
 
+    /* Which breast the feeding finished on. Only ever a side that has time on
+       it, so stopping right after a switch can't leave it pointing nowhere. */
+    var endSide = e.endSide === "L" || e.endSide === "R" ? e.endSide : null;
+    if (endSide === "L" && leftSec === 0) endSide = null;
+    if (endSide === "R" && rightSec === 0) endSide = null;
+    if (!endSide) {
+      if (leftSec > 0 && rightSec === 0) endSide = "L";
+      else if (rightSec > 0 && leftSec === 0) endSide = "R";
+    }
+
     return {
       id: e.id || newId(),
       start: e.start,
       leftSec: leftSec,
       rightSec: rightSec,
+      endSide: endSide,
       notes: typeof e.notes === "string" ? e.notes : ""
     };
   }
@@ -592,9 +611,16 @@
       $("runningView").hidden = true;
       var last = feeds[0];
       $("sinceText").innerHTML = last
-        ? "Last fed <b>" + agoText(last.start) + "</b> &middot; " + SIDE_NAME[feedSide(last)]
+        ? "Last fed <b>" + agoText(last.start) + "</b> &middot; " + lastSideText(last)
         : "No feedings recorded yet";
     }
+  }
+
+  /* On the idle card, the side she finished on is the useful one — it says
+     where to pick up next. */
+  function lastSideText(e) {
+    if (e.endSide) return "ended on " + SIDE_NAME[e.endSide].toLowerCase();
+    return SIDE_NAME[feedSide(e)];
   }
 
   function tick() {
@@ -636,7 +662,9 @@
 
   function feedSubText(e) {
     if (e.leftSec > 0 && e.rightSec > 0) {
-      return "Left " + minutesOf(e.leftSec) + " min · Right " + minutesOf(e.rightSec) + " min";
+      var text = "Left " + minutesOf(e.leftSec) + " min · Right " + minutesOf(e.rightSec) + " min";
+      if (e.endSide) text += " · ended " + SIDE_NAME[e.endSide].toLowerCase();
+      return text;
     }
     return SIDE_NAME[feedSide(e)] + " only";
   }
@@ -781,6 +809,7 @@
       start: active.start,
       leftSec: liveLeft(),
       rightSec: liveRight(),
+      endSide: active.side,
       notes: ""
     };
     if (entry.leftSec + entry.rightSec < 1) { entry.leftSec = active.side === "L" ? 1 : 0; entry.rightSec = active.side === "R" ? 1 : 0; }
@@ -804,13 +833,16 @@
 
   var editingFeedId = null;
   var editorSide = "L";
+  var editorEnd = "R";
 
   function applySideLayout() {
     var single = editorSide !== "B";
     $("durSingle").hidden = !single;
     $("durSplit").hidden = single;
+    $("endWrap").hidden = single;   /* with one side, the ending side is that side */
     $("durLabel").textContent = "Minutes on the " + (editorSide === "R" ? "right" : "left");
     markSelected($("editorScrim"), "data-pick", editorSide);
+    markSelected($("endWrap"), "data-end", editorEnd);
   }
 
   function openFeedEditor(id) {
@@ -821,6 +853,7 @@
 
     editingFeedId = e ? e.id : null;
     editorSide = e ? feedSide(e) : "L";
+    editorEnd = (e && e.endSide) || "R";
 
     var when = e ? new Date(e.start) : new Date();
     $("editorTitle").textContent = e ? "Edit feeding" : "Add a feeding";
@@ -841,6 +874,13 @@
     if (isNaN(v) || v < 0) v = 0;
     return Math.min(v, 600);
   }
+
+  document.querySelectorAll("[data-end]").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      editorEnd = btn.getAttribute("data-end");
+      markSelected($("endWrap"), "data-end", editorEnd);
+    });
+  });
 
   document.querySelectorAll("[data-pick]").forEach(function (btn) {
     btn.addEventListener("click", function () {
@@ -886,13 +926,14 @@
       return;
     }
 
-    var record = {
+    var record = normalizeFeed({
       id: editingFeedId || newId(),
       start: start,
       leftSec: leftMin * 60,
       rightSec: rightMin * 60,
+      endSide: editorSide === "B" ? editorEnd : editorSide,
       notes: $("fNotes").value.trim()
-    };
+    });
 
     var list = feeds.filter(function (e) { return e.id !== editingFeedId; });
     list.push(record);
@@ -1035,7 +1076,7 @@
   $("exportCsv").addEventListener("click", function () {
     if (!feeds.length && !diapers.length) { toast("Nothing to export yet"); return; }
 
-    var rows = [["Date", "Time", "Type", "Side", "Left (min)", "Right (min)", "Total (min)", "Pee", "Poop", "Notes"]];
+    var rows = [["Date", "Time", "Type", "Side", "Left (min)", "Right (min)", "Total (min)", "Ended on", "Pee", "Poop", "Notes"]];
 
     var items = [];
     feeds.forEach(function (e) { items.push({ at: e.start, kind: "feed", data: e }); });
@@ -1050,10 +1091,11 @@
       if (item.kind === "feed") {
         var e = item.data;
         rows.push([date, time, "Feeding", SIDE_NAME[feedSide(e)],
-          minutesOf(e.leftSec), minutesOf(e.rightSec), feedMinutes(e), "", "", e.notes]);
+          minutesOf(e.leftSec), minutesOf(e.rightSec), feedMinutes(e),
+          e.endSide ? SIDE_NAME[e.endSide] : "", "", "", e.notes]);
       } else {
         var d = item.data;
-        rows.push([date, time, "Diaper", "", "", "", "",
+        rows.push([date, time, "Diaper", "", "", "", "", "",
           d.pee ? "Yes" : "", d.poop ? "Yes" : "", d.notes]);
       }
     });
