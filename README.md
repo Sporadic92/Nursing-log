@@ -16,8 +16,10 @@ the first visit, nothing sent anywhere.
    looks like:
 
    ```
-   https://sporadic92.github.io/nursing-log/
+   https://sporadic92.github.io/Nursing-log/
    ```
+
+   (That capital `N` matters — use the exact link GitHub shows you.)
 
 ### Step 2 — install it on the phone
 
