@@ -25,8 +25,25 @@ const SHOTS = await mkdtemp(join(tmpdir(), 'nursing-log-'));
 /* A static server for the app, so the suite needs nothing else running. */
 const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.json': 'application/json',
   '.webmanifest': 'application/manifest+json', '.png': 'image/png', '.md': 'text/markdown' };
+/* A signal too weak to answer, rather than none at all: these requests are
+   simply never replied to, which is what a bad connection actually does to a
+   fetch. Held so they can be torn down at the end. */
+let stall = false;
+const stalled = [];
+
 const server = createServer((req, res) => {
   let path = decodeURIComponent(req.url.split('?')[0]);
+
+  /* A page to press Back into, so leaving the app is distinguishable from
+     closing a sheet. */
+  if (path === '/__sentinel') {
+    res.writeHead(200, { 'Content-Type': 'text/html' });
+    res.end('<!doctype html><title>sentinel</title><h1>sentinel</h1>');
+    return;
+  }
+
+  if (stall) { stalled.push(res); return; }
+
   if (path.endsWith('/')) path += 'index.html';
   const file = join(ROOT, path);
   if (!file.startsWith(ROOT)) { res.writeHead(403).end(); return; }
@@ -1084,6 +1101,23 @@ check('his note is carried', msg.includes('Leaked through'));
 check('it is small enough to text (' + msg.length + ' chars)', msg.length < 1200);
 check('the menu closes behind it', await hp.isHidden('#menuScrim'));
 
+/* Five days back: inside the week an update now covers, outside the three days
+   it used to. A quiet few days between sends must not push records off the end
+   with nothing said about it. */
+await hp.evaluate(() => {
+  const list = JSON.parse(localStorage.getItem('nursinglog.diapers.v1') || '[]');
+  list.push({ id: 'old', time: Date.now() - 5 * 86400000, pee: false, poop: true, size: 'M',
+              notes: 'Five days back' });
+  localStorage.setItem('nursinglog.diapers.v1', JSON.stringify(list));
+});
+await hp.reload({ waitUntil: 'networkidle' });
+await hp.click('#menuBtn');
+await hp.click('#exportUpdate');
+const wide = await hp.evaluate(() => window.__shared[window.__shared.length - 1].text);
+check('an update reaches back a week', wide.includes('Five days back'));
+check('and says so', wide.includes('last 7 days'));
+await hp.click('#menuClose').catch(() => {});
+
 // her phone: paste it in
 const hers = await feedsNow();
 const herNotes = await page.textContent('#history');
@@ -1345,6 +1379,192 @@ check('no dimming once the feed ends', !(await dim.isVisible('#dimVeil')));
 check('wake lock released with the feed', !(await dim.evaluate(() => window.__wake)).held);
 await dimCtx.close();
 
+// ---------- the back gesture ----------
+/* Its own context, and a sentinel page behind the app, so "left the app" is
+   something the suite can actually see rather than infer. */
+const backCtx = await browser.newContext({ viewport: { width: 412, height: 915 }, hasTouch: true });
+await backCtx.addInitScript(wakeStub, 600000);
+const bp = await backCtx.newPage();
+await bp.goto(BASE + '__sentinel', { waitUntil: 'load' });
+await bp.goto(BASE, { waitUntil: 'networkidle' });
+await bp.evaluate(() => {
+  localStorage.setItem('nursinglog.entries.v1', JSON.stringify([
+    { id: 'bk', start: Date.now() - 3600000, leftSec: 600, rightSec: 0, endSide: 'L', notes: '' },
+  ]));
+});
+await bp.reload({ waitUntil: 'networkidle' });
+
+const back = async () => { await bp.evaluate(() => history.back()); await bp.waitForTimeout(300); };
+const inApp = async () => bp.url().indexOf('__sentinel') < 0 && await bp.isVisible('#idleView');
+
+await bp.click('#menuBtn');
+check('the menu opens', await bp.isVisible('#menuScrim'));
+await back();
+check('back closes the menu', await bp.isHidden('#menuScrim'));
+check('and does not close the app', await inApp());
+
+await bp.click('.entry');
+check('a record opens read-only', await bp.isVisible('#editorScrim'));
+await back();
+check('back closes the record', await bp.isHidden('#editorScrim'));
+check('still in the app', await inApp());
+
+await bp.click('#guideBtn');
+await back();
+check('back closes the basics', await bp.isHidden('#guideScrim'));
+
+/* The menu shuts itself before opening what it was asked for. Both happen in
+   one go, and they must still cost exactly one entry between them. */
+await bp.click('#menuBtn');
+await bp.click('#whatsNew');
+check('what\'s new replaces the menu', await bp.isVisible('#logScrim') && await bp.isHidden('#menuScrim'));
+await back();
+check('one back closes it', await bp.isHidden('#logScrim'));
+check('and does not leave the app', await inApp());
+
+/* Closing by button has to spend the entry it pushed, or every sheet opened
+   and closed leaves a dead one and back stops working altogether. */
+for (let i = 0; i < 3; i++) {
+  await bp.click('#menuBtn');
+  await bp.waitForTimeout(60);
+  await bp.click('#menuClose');
+  await bp.waitForTimeout(120);
+}
+check('sheets closed by button leave the app usable', await inApp());
+await back();
+check('back now leaves the app, having no sheets left to close', bp.url().indexOf('__sentinel') >= 0);
+
+await bp.goForward();
+await bp.waitForTimeout(300);
+check('and the app comes back', await bp.isVisible('#idleView'));
+
+// a tap beside the card: safe while reading, refused while editing
+await bp.click('.entry');
+await bp.click('#editorScrim', { position: { x: 206, y: 30 } });
+check('a tap outside closes a card being read', await bp.isHidden('#editorScrim'));
+
+await bp.click('.entry');
+await bp.click('#editorEdit');
+await bp.fill('#fNotes', 'half-typed thought');
+await bp.click('#editorScrim', { position: { x: 206, y: 30 } });
+check('a tap outside will not discard an edit', await bp.isVisible('#editorScrim'));
+check('and what was typed is still there', (await bp.inputValue('#fNotes')) === 'half-typed thought');
+await bp.click('#editorCancel');
+check('Cancel is still the way out', await bp.isHidden('#editorScrim'));
+
+await bp.click('[data-diaper="pee"]');
+check('a new diaper opens unlocked', await bp.isVisible('#diaperScrim'));
+await bp.click('#diaperScrim', { position: { x: 206, y: 30 } });
+check('a tap outside will not discard a new record either', await bp.isVisible('#diaperScrim'));
+await bp.click('#diaperCancel');
+await backCtx.close();
+
+// ---------- the "ago" lines keep moving ----------
+/* Seeded a second short of the next minute, so the tick is observable in two
+   seconds rather than sixty. */
+const tickCtx = await browser.newContext({ viewport: { width: 412, height: 915 }, hasTouch: true });
+await tickCtx.addInitScript(wakeStub, 600000);
+const tp = await tickCtx.newPage();
+await tp.goto(BASE, { waitUntil: 'networkidle' });
+await tp.evaluate(() => {
+  const t = Date.now() - 119000;
+  localStorage.setItem('nursinglog.meds.v1', JSON.stringify([
+    { id: 'm1', time: t, name: 'Ibuprofen', dose: '400 mg', notes: '' },
+  ]));
+  localStorage.setItem('nursinglog.diapers.v1', JSON.stringify([
+    { id: 'd1', time: t, pee: true, poop: false, notes: '' },
+  ]));
+});
+await tp.reload({ waitUntil: 'networkidle' });
+
+check('the dose line starts at one minute', (await tp.textContent('#medSince')).includes('1 min ago'));
+await tp.evaluate(() => { document.querySelector('#medQuick button').__probe = 'kept'; });
+await tp.waitForTimeout(1800);
+check('the dose line counts up like the others',
+  (await tp.textContent('#medSince')).includes('2 min ago'));
+check('the diaper line counts up too', (await tp.textContent('#diaperSince')).includes('2 min ago'));
+check('and the quick buttons are not rebuilt under a thumb',
+  await tp.evaluate(() => document.querySelector('#medQuick button').__probe === 'kept'));
+
+// coming back to the app rereads every list, medicines included
+await tp.evaluate(() => {
+  const list = JSON.parse(localStorage.getItem('nursinglog.meds.v1'));
+  list.unshift({ id: 'm2', time: Date.now(), name: 'Paracetamol', dose: '500 mg', notes: '' });
+  localStorage.setItem('nursinglog.meds.v1', JSON.stringify(list));
+  document.dispatchEvent(new Event('visibilitychange'));
+});
+await tp.waitForTimeout(200);
+check('returning to the app picks up medicines as well',
+  (await tp.textContent('#medSince')).includes('Paracetamol'));
+await tickCtx.close();
+
+// ---------- midnight ----------
+/* The clock is shifted to just before midnight so the rollover can be watched
+   happening, rather than waited for. */
+const mnCtx = await browser.newContext({ viewport: { width: 412, height: 915 }, hasTouch: true });
+await mnCtx.addInitScript(() => {
+  window.NL_DIM_MS = 600000;
+  const real = Date.now;
+  window.__clock = { offset: 0 };
+  const d = new Date(real());
+  const midnight = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1).getTime();
+  window.__clock.offset = (midnight - 4000) - real();
+  Date.now = () => real() + window.__clock.offset;
+});
+const mn = await mnCtx.newPage();
+await mn.goto(BASE, { waitUntil: 'networkidle' });
+await mn.evaluate(() => {
+  localStorage.setItem('nursinglog.entries.v1', JSON.stringify([
+    { id: 'mn', start: Date.now() - 3600000, leftSec: 600, rightSec: 0, endSide: 'L', notes: '' },
+  ]));
+});
+await mn.reload({ waitUntil: 'networkidle' });
+check('the evening\'s feed is under Today', (await mn.textContent('.day')).includes('Today'));
+check('and counts in Today\'s totals', (await mn.textContent('#statCount')) === '1');
+
+await mn.evaluate(() => { window.__clock.offset += 6000; });
+await mn.waitForTimeout(1600);
+check('after midnight it is yesterday\'s', (await mn.textContent('.day')).includes('Yesterday'));
+check('and Today starts over without being prompted', (await mn.textContent('#statCount')) === '0');
+await mnCtx.close();
+
+// ---------- a long log stays quick ----------
+const longCtx = await browser.newContext({ viewport: { width: 412, height: 915 }, hasTouch: true });
+await longCtx.addInitScript(wakeStub, 600000);
+const lp = await longCtx.newPage();
+await lp.goto(BASE, { waitUntil: 'networkidle' });
+await lp.evaluate(() => {
+  const DAY = 86400000, noon = new Date(); noon.setHours(12, 0, 0, 0);
+  const feeds = [], diapers = [];
+  for (let d = 0; d < 20; d++) {
+    const base = noon.getTime() - d * DAY;
+    feeds.push({ id: 'f' + d + 'a', start: base, leftSec: 600, rightSec: 0, endSide: 'L', notes: '' });
+    feeds.push({ id: 'f' + d + 'b', start: base - 3600000, leftSec: 300, rightSec: 300, endSide: 'R', notes: '' });
+    diapers.push({ id: 'g' + d, time: base - 1800000, pee: true, poop: false, notes: '' });
+  }
+  localStorage.setItem('nursinglog.entries.v1', JSON.stringify(feeds));
+  localStorage.setItem('nursinglog.diapers.v1', JSON.stringify(diapers));
+});
+await lp.reload({ waitUntil: 'networkidle' });
+
+await lp.screenshot({ path: `${SHOTS}/show-older.png`, fullPage: true });
+check('only the recent fortnight is built', (await lp.$$('.day')).length === 14);
+check('the older days are offered, counted', (await lp.textContent('#history')).includes('Show older (6 more days)'));
+check('a day\'s totals survive the single pass',
+  (await lp.textContent('.day')).includes('2 feeds · 20 min') && (await lp.textContent('.day')).includes('1 diaper'));
+
+await lp.click('text=Show older (6 more days)');
+check('Show older reaches the rest', (await lp.$$('.day')).length === 20);
+check('and stops offering once there is nothing older',
+  !(await lp.textContent('#history')).includes('Show older'));
+
+/* Filtering rebuilds the list; the day count has to follow the filter. */
+await lp.click('[data-filter="diapers"]');
+check('a filtered day shows only its own total',
+  (await lp.textContent('.day')).includes('1 diaper') && !(await lp.textContent('.day')).includes('feed'));
+await lp.click('[data-filter="all"]');
+await longCtx.close();
+
 // ---------- PWA ----------
 check('service worker active', await page.evaluate(() => navigator.serviceWorker.ready.then(r => !!r.active).catch(() => false)));
 const beforeOffline = (await page.$$('.entry')).length;   // whatever the log holds by now
@@ -1353,6 +1573,28 @@ await page.reload({ waitUntil: 'load' });
 check('works offline', await page.isVisible('#idleView') && (await page.$$('.entry')).length === beforeOffline);
 await ctx.setOffline(false);
 check('no horizontal scroll', !(await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1)));
+
+/* No signal at all was always handled, since fetch rejects. A signal too weak
+   to answer is the nursery case, and it used to mean a blank screen for as
+   long as the radio kept trying: the cached copy now wins the race. */
+const slowCtx = await browser.newContext({ viewport: { width: 412, height: 915 }, hasTouch: true });
+await slowCtx.addInitScript(wakeStub, 600000);
+const slowPage = await slowCtx.newPage();
+await slowPage.goto(BASE, { waitUntil: 'networkidle' });
+await slowPage.evaluate(() => navigator.serviceWorker.ready);
+check('the app is in the cache to fall back on', await slowPage.evaluate(() =>
+  caches.keys()
+    .then(ks => Promise.all(ks.map(k => caches.open(k).then(c => c.match('./index.html')))))
+    .then(hits => hits.some(Boolean))));
+
+stall = true;
+const slowStart = Date.now();
+await slowPage.reload({ waitUntil: 'domcontentloaded' });
+await slowPage.waitForSelector('#idleView', { state: 'visible', timeout: 15000 });
+const slowTook = Date.now() - slowStart;
+stall = false;
+check('a signal too weak to answer does not hold the app up (' + slowTook + 'ms)', slowTook < 6000);
+await slowCtx.close();
 
 // ---------- screenshots ----------
 const shot = async (p, name) => p.screenshot({ path: `${SHOTS}/${name}.png`, fullPage: true });
@@ -1401,6 +1643,7 @@ await dp.screenshot({ path: `${SHOTS}/paste-dark.png` });
 await dark.close();
 
 await browser.close();
+stalled.forEach(res => res.destroy());
 server.close();
 
 console.log('PASSED ' + ok.length + '   (screenshots: ' + SHOTS + ')');

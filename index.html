@@ -768,6 +768,14 @@
      up an update yet. Add a new entry at the top whenever you ship, and bump
      CACHE in sw.js in the same commit. */
   var VERSIONS = [
+    { v: "1.15", date: "15 Aug 2026", notes: [
+      "Swiping back now closes whatever card is open, instead of closing the whole app.",
+      "Tapping the space beside a card you're part-way through editing no longer throws away what you typed — Cancel and Save are still the way out.",
+      "Opens straight away on a weak signal instead of waiting on it.",
+      "The medicine line counts up like the feeding and diaper ones did, and Today's totals turn over at midnight on their own.",
+      "The list shows the last two weeks with Show older underneath, so months of records stay quick to scroll.",
+      "An update sent to the other phone now carries a week rather than three days."
+    ] },
     { v: "1.14", date: "15 Aug 2026", notes: [
       "If part of the log ever can't be read, the app now says so instead of showing an empty list — and it sets that part aside untouched rather than letting the next thing you log save over it.",
       "A red line at the top is the only warning of its kind in the app. Tap it to save a copy of whatever couldn't be read, and to get your records back with Restore from backup.",
@@ -1101,6 +1109,13 @@
   var meds = loadMeds();
   var active = loadActive();
   var filter = localStorage.getItem(FILTER_KEY) || "all";
+
+  /* How many days of timeline are built at once. Everything older is one tap
+     away — and in the spreadsheet, the summary and the backup regardless. Not
+     stored: a fresh open starts at the recent days, which is what is wanted at
+     3 a.m., and reaching further back is a deliberate thing to do. */
+  var HISTORY_DAYS = 14;
+  var historyDays = HISTORY_DAYS;
   if (filter !== "feeds" && filter !== "diapers" && filter !== "meds") filter = "all";
 
   /* ---------------- formatting ---------------- */
@@ -1181,6 +1196,84 @@
 
   function liveLeft() { return active.leftSec + (active.side === "L" ? segSeconds() : 0); }
   function liveRight() { return active.rightSec + (active.side === "R" ? segSeconds() : 0); }
+
+  /* ---------------- sheets, and the back gesture ---------------- */
+
+  /* Every sheet lives here. The veil logic and the back gesture both read this
+     list, so a new sheet is registered once rather than in two places. */
+  var SHEETS = ["editorScrim", "diaperScrim", "medScrim", "menuScrim", "logScrim",
+                "guideScrim", "pasteScrim", "rescueScrim"];
+
+  /* The three that hold fields. Reading one is safe to dismiss; editing one is not. */
+  var EDITORS = ["editorScrim", "diaperScrim", "medScrim"];
+
+  function sheetOpen() {
+    for (var i = 0; i < SHEETS.length; i++) {
+      if (!$(SHEETS[i]).hidden) return true;
+    }
+    return false;
+  }
+
+  function beingEdited(id) {
+    if (EDITORS.indexOf(id) < 0) return false;
+    return !$(id).querySelector(".sheet").classList.contains("locked");
+  }
+
+  /* Back is a reflex, and with no history of our own Android reads it as "leave
+     the app" — so checking a record and swiping back used to close Nursing Log
+     mid-feed. One entry stands for "a sheet is open", whichever one it is, and
+     back spends it on closing the card instead. Back on an editor does what
+     Cancel does; only the backdrop is held to a stricter rule, since only the
+     backdrop gets hit by accident.
+
+     The entry is settled at the end of the tap rather than on the spot, because
+     the menu closes itself before opening what it was asked for: settling once,
+     after both have happened, keeps that from spending an entry and immediately
+     pushing another. A microtask rather than a timer, so it has always landed
+     by the time anything else — a following tap, or a test — can run. */
+  var sheetEntry = false;   /* is our entry currently on the history stack? */
+  var pendingBack = 0;      /* history.back() calls we made ourselves */
+  var syncQueued = false;
+
+  function syncSheetHistory() {
+    syncQueued = false;
+    var want = sheetOpen();
+    if (want === sheetEntry) return;
+
+    if (want) {
+      sheetEntry = true;
+      try { history.pushState({ nlSheet: true }, ""); }
+      catch (err) { sheetEntry = false; }   /* back won't close it; nothing else breaks */
+    } else {
+      sheetEntry = false;
+      pendingBack++;
+      try { history.back(); } catch (err) { pendingBack--; }
+    }
+  }
+
+  function queueSheetSync() {
+    if (syncQueued) return;
+    syncQueued = true;
+    Promise.resolve().then(syncSheetHistory);
+  }
+
+  function showSheet(id) {
+    $(id).hidden = false;
+    queueSheetSync();
+  }
+
+  function hideSheet(id) {
+    $(id).hidden = true;
+    queueSheetSync();
+  }
+
+  window.addEventListener("popstate", function () {
+    if (pendingBack > 0) { pendingBack--; return; }   /* our own unwinding */
+    if (!sheetEntry) return;                          /* not an entry of ours */
+
+    sheetEntry = false;   /* it went with the navigation; don't spend another */
+    for (var i = 0; i < SHEETS.length; i++) $(SHEETS[i]).hidden = true;
+  });
 
   /* ---------------- rendering ---------------- */
 
@@ -1281,7 +1374,10 @@
     return out;
   }
 
-  function renderMedCard() {
+  /* Its own function because it is the part that has to keep ticking. Rebuilding
+     the whole card once a second would swap the quick buttons out from under a
+     thumb that is already on its way down. */
+  function renderMedSince() {
     /* She names the medicine, so this line is built rather than interpolated. */
     var last = meds[0];
     var since = $("medSince");
@@ -1295,6 +1391,10 @@
     } else {
       since.textContent = "No medicine recorded yet";
     }
+  }
+
+  function renderMedCard() {
+    renderMedSince();
 
     var host = $("medQuick");
     host.textContent = "";
@@ -1386,31 +1486,43 @@
       return;
     }
 
-    var currentDay = null;
-
+    /* One pass for every day's totals, and the day each record belongs to kept
+       on the record. This used to walk the whole log again for each heading —
+       fine for a week of records, minutes of dropped frames by the time a log
+       is a few months old, and it ran on every save. */
+    var totals = {}, days = [];
     items.forEach(function (item) {
       var key = dayKey(item.at);
+      item.day = key;
+      var t = totals[key];
+      if (!t) { t = totals[key] = { feeds: 0, minutes: 0, diapers: 0, meds: 0 }; days.push(key); }
+      if (item.kind === "feed") { t.feeds++; t.minutes += feedMinutes(item.data); }
+      else if (item.kind === "med") t.meds++;
+      else t.diapers++;
+    });
+
+    var currentDay = null, shownDays = 0;
+
+    items.some(function (item) {
+      var key = item.day;
 
       if (key !== currentDay) {
+        /* Only the recent days are built. The rest are a tap away, and the
+           whole log is in the spreadsheet and the backup either way. */
+        if (shownDays >= historyDays) return true;
         currentDay = key;
+        shownDays++;
 
-        var fCount = 0, fMin = 0, dCount = 0, mCount = 0;
-        items.forEach(function (x) {
-          if (dayKey(x.at) !== key) return;
-          if (x.kind === "feed") { fCount++; fMin += feedMinutes(x.data); }
-          else if (x.kind === "med") mCount++;
-          else dCount++;
-        });
-
+        var t = totals[key];
         var h = document.createElement("h2");
         h.className = "day";
         var name = document.createElement("strong");
         name.textContent = dayLabel(key);
         var sum = document.createElement("span");
         var parts = [];
-        if (fCount) parts.push(fCount + (fCount === 1 ? " feed" : " feeds") + " · " + fMin + " min");
-        if (dCount) parts.push(dCount + (dCount === 1 ? " diaper" : " diapers"));
-        if (mCount) parts.push(mCount + (mCount === 1 ? " dose" : " doses"));
+        if (t.feeds) parts.push(t.feeds + (t.feeds === 1 ? " feed" : " feeds") + " · " + t.minutes + " min");
+        if (t.diapers) parts.push(t.diapers + (t.diapers === 1 ? " diaper" : " diapers"));
+        if (t.meds) parts.push(t.meds + (t.meds === 1 ? " dose" : " doses"));
         sum.textContent = parts.join(" · ");
         h.appendChild(name);
         h.appendChild(sum);
@@ -1466,6 +1578,19 @@
       row.appendChild(meta);
       host.appendChild(row);
     });
+
+    if (days.length > shownDays) {
+      var left = days.length - shownDays;
+      var more = document.createElement("button");
+      more.className = "text-btn";
+      more.type = "button";
+      more.textContent = "Show older (" + left + (left === 1 ? " more day" : " more days") + ")";
+      more.addEventListener("click", function () {
+        historyDays += HISTORY_DAYS;
+        renderHistory();
+      });
+      host.appendChild(more);
+    }
   }
 
   function renderAll() {
@@ -1667,10 +1792,10 @@
     $("fNotes").value = e ? e.notes : "";
 
     lockFeed(!!locked);
-    $("editorScrim").hidden = false;
+    showSheet("editorScrim");
   }
 
-  $("editorClose").addEventListener("click", function () { $("editorScrim").hidden = true; });
+  $("editorClose").addEventListener("click", function () { hideSheet("editorScrim"); });
 
   $("editorEdit").addEventListener("click", function () {
     $("editorTitle").textContent = "Edit feeding";
@@ -1710,7 +1835,7 @@
   });
 
   $("addManualBtn").addEventListener("click", function () { openFeedEditor(null, false); });
-  $("editorCancel").addEventListener("click", function () { $("editorScrim").hidden = true; });
+  $("editorCancel").addEventListener("click", function () { hideSheet("editorScrim"); });
 
   /* The date and time inputs only carry minutes. Remember the exact instant a
      sheet was opened with, and keep it when those fields are left untouched, so
@@ -1764,7 +1889,7 @@
     list.push(record);
     if (!saveFeeds(list)) return;
 
-    $("editorScrim").hidden = true;
+    hideSheet("editorScrim");
     renderAll();
     toast("Saved");
   });
@@ -1776,7 +1901,7 @@
     if (!gone) return;
 
     if (!saveFeeds(feeds.filter(function (e) { return e.id !== gone.id; }))) return;
-    $("editorScrim").hidden = true;
+    hideSheet("editorScrim");
     renderAll();
 
     toast("Feeding deleted", function () {
@@ -1841,10 +1966,10 @@
     markSelected($("sizeWrap"), "data-size", diaperSize);
 
     lockDiaper(!!locked);
-    scrim.hidden = false;
+    showSheet("diaperScrim");
   }
 
-  $("diaperClose").addEventListener("click", function () { $("diaperScrim").hidden = true; });
+  $("diaperClose").addEventListener("click", function () { hideSheet("diaperScrim"); });
 
   $("diaperEdit").addEventListener("click", function () {
     $("diaperTitle").textContent = "Edit diaper";
@@ -1867,7 +1992,7 @@
   });
 
   $("addDiaperBtn").addEventListener("click", function () { openDiaperEditor(null, null, false); });
-  $("diaperCancel").addEventListener("click", function () { $("diaperScrim").hidden = true; });
+  $("diaperCancel").addEventListener("click", function () { hideSheet("diaperScrim"); });
 
   $("diaperSave").addEventListener("click", function () {
     var time = fieldsKey("dDate", "dTime") === diaperBaseKey
@@ -1893,7 +2018,7 @@
     list.push(record);
     if (!saveDiapers(list)) return;
 
-    scrim.hidden = true;
+    hideSheet("diaperScrim");
     renderAll();
     toast("Saved");
   });
@@ -1903,7 +2028,7 @@
     if (!gone) return;
 
     if (!saveDiapers(diapers.filter(function (d) { return d.id !== gone.id; }))) return;
-    $("diaperScrim").hidden = true;
+    hideSheet("diaperScrim");
     renderAll();
 
     toast("Diaper deleted", function () {
@@ -1990,7 +2115,7 @@
     $("mNotes").value = m ? m.notes : "";
 
     lockMed(!!locked);
-    $("medScrim").hidden = false;
+    showSheet("medScrim");
   }
 
   ["mName", "mDose"].forEach(function (id) {
@@ -2002,8 +2127,8 @@
   });
 
   $("addMedBtn").addEventListener("click", function () { openMedEditor(null, null, false); });
-  $("medClose").addEventListener("click", function () { $("medScrim").hidden = true; });
-  $("medCancel").addEventListener("click", function () { $("medScrim").hidden = true; });
+  $("medClose").addEventListener("click", function () { hideSheet("medScrim"); });
+  $("medCancel").addEventListener("click", function () { hideSheet("medScrim"); });
 
   $("medEdit").addEventListener("click", function () {
     $("medTitle").textContent = "Edit medicine";
@@ -2029,7 +2154,7 @@
     list.push(record);
     if (!saveMeds(list)) return;
 
-    $("medScrim").hidden = true;
+    hideSheet("medScrim");
     renderAll();
     toast("Saved");
   });
@@ -2039,7 +2164,7 @@
     if (!gone) return;
 
     if (!saveMeds(meds.filter(function (m) { return m.id !== gone.id; }))) return;
-    $("medScrim").hidden = true;
+    hideSheet("medScrim");
     renderAll();
 
     toast("Dose deleted", function () {
@@ -2436,13 +2561,16 @@
     });
   });
 
-  $("menuBtn").addEventListener("click", function () { $("menuScrim").hidden = false; });
-  $("menuClose").addEventListener("click", function () { $("menuScrim").hidden = true; });
+  $("menuBtn").addEventListener("click", function () { showSheet("menuScrim"); });
+  $("menuClose").addEventListener("click", function () { hideSheet("menuScrim"); });
 
-  [$("editorScrim"), $("diaperScrim"), $("medScrim"), $("menuScrim"), $("logScrim"),
-   $("guideScrim"), $("pasteScrim"), $("rescueScrim")].forEach(function (scrim) {
+  /* The backdrop is a wide invisible target right beside a one-handed thumb, so
+     it may not throw away typing: a card being edited ignores it and keeps
+     Cancel as the way out. Reading one closes on a tap outside as before. */
+  SHEETS.forEach(function (id) {
+    var scrim = $(id);
     scrim.addEventListener("click", function (ev) {
-      if (ev.target === scrim) scrim.hidden = true;
+      if (ev.target === scrim && !beingEdited(id)) hideSheet(id);
     });
   });
 
@@ -2585,7 +2713,7 @@
     var bytes = buildSummaryPdf();
     var blob = new Blob([bytes], { type: "application/pdf" });
     shareBlob("nursing-log-summary-" + stamp() + ".pdf", blob, "application/pdf");
-    $("menuScrim").hidden = true;
+    hideSheet("menuScrim");
   });
 
   $("exportCsv").addEventListener("click", function () {
@@ -2623,7 +2751,7 @@
 
     deliver("nursing-log-" + stamp() + ".csv",
       rows.map(function (r) { return r.map(csvCell).join(","); }).join("\r\n"), "text/csv");
-    $("menuScrim").hidden = true;
+    hideSheet("menuScrim");
   });
 
   $("exportJson").addEventListener("click", function () {
@@ -2637,7 +2765,7 @@
     };
     deliver("nursing-log-backup-" + stamp() + ".json", JSON.stringify(payload, null, 2),
       "application/json", markBackedUp);
-    $("menuScrim").hidden = true;
+    hideSheet("menuScrim");
   });
 
   $("importJson").addEventListener("click", function () { $("fileInput").click(); });
@@ -2713,10 +2841,10 @@
 
   $("dataAlert").addEventListener("click", function () {
     renderRescue();
-    $("rescueScrim").hidden = false;
+    showSheet("rescueScrim");
   });
 
-  $("rescueClose").addEventListener("click", function () { $("rescueScrim").hidden = true; });
+  $("rescueClose").addEventListener("click", function () { hideSheet("rescueScrim"); });
 
   /* Everything unreadable in one file: the text that was set aside, whatever is
      still stuck in place, and the individual records being held back. */
@@ -2770,7 +2898,7 @@
       return;
     }
 
-    $("rescueScrim").hidden = true;
+    hideSheet("rescueScrim");
     renderRescue();
 
     toast("Removed", function () {
@@ -2798,8 +2926,15 @@
      as a message, and she pastes it in. It only ever adds, so her log is the one
      that has everything and nothing she wrote can be replaced by what arrives.
      Overlapping sends are the point — anything already there is skipped, so a
-     message that never gets read costs nothing. */
-  var UPDATE_DAYS = 3;
+     message that never gets read costs nothing.
+
+     A week rather than the three days this started at: the overlap is only
+     insurance for as long as the window outlasts the gap between sends, and a
+     busy few days would quietly push the oldest records off the end with
+     nothing to say so. Seven days of one phone's nappies is still a few
+     kilobytes of text. Beyond that the backup file is the answer, and the menu
+     says so. */
+  var UPDATE_DAYS = 7;
 
   /* Stripped to what a record can't be rebuilt without: no ids (the other phone
      mints its own, and matching is by content anyway), no empty notes, and no
@@ -2851,7 +2986,7 @@
       "To add them: open Nursing Log, tap the gear, then Paste an update.\n\n" +
       JSON.stringify(payload)
     );
-    $("menuScrim").hidden = true;
+    hideSheet("menuScrim");
   });
 
   /* Sent as a message rather than a file: an attachment has to be saved before
@@ -2884,11 +3019,11 @@
 
   $("importPaste").addEventListener("click", function () {
     $("pasteBox").value = "";
-    $("menuScrim").hidden = true;
-    $("pasteScrim").hidden = false;
+    hideSheet("menuScrim");
+    showSheet("pasteScrim");
   });
 
-  $("pasteCancel").addEventListener("click", function () { $("pasteScrim").hidden = true; });
+  $("pasteCancel").addEventListener("click", function () { hideSheet("pasteScrim"); });
 
   $("pasteImport").addEventListener("click", function () {
     var data = readPayload($("pasteBox").value);
@@ -2898,7 +3033,7 @@
       return;
     }
 
-    $("pasteScrim").hidden = true;
+    hideSheet("pasteScrim");
     renderAll();
     toast(added ? "Added " + countText(added) : "Nothing new to add");
   });
@@ -2982,7 +3117,7 @@
       }
 
       renderAll();
-      $("menuScrim").hidden = true;
+      hideSheet("menuScrim");
       toast(added ? "Restored " + added + " records" : "Nothing new to add");
     };
     reader.readAsText(file);
@@ -3041,11 +3176,11 @@
   renderVersionLog();
 
   $("whatsNew").addEventListener("click", function () {
-    $("menuScrim").hidden = true;
-    $("logScrim").hidden = false;
+    hideSheet("menuScrim");
+    showSheet("logScrim");
   });
 
-  $("logClose").addEventListener("click", function () { $("logScrim").hidden = true; });
+  $("logClose").addEventListener("click", function () { hideSheet("logScrim"); });
 
   /* ---------------- newborn basics ---------------- */
 
@@ -3106,11 +3241,11 @@
      wherever it was left days ago. */
   $("guideBtn").addEventListener("click", function () {
     $("guide").querySelectorAll("details").forEach(function (box) { box.open = false; });
-    $("guideScrim").hidden = false;
+    showSheet("guideScrim");
     $("guideScrim").querySelector(".sheet").scrollTop = 0;
   });
 
-  $("guideClose").addEventListener("click", function () { $("guideScrim").hidden = true; });
+  $("guideClose").addEventListener("click", function () { hideSheet("guideScrim"); });
 
   /* Where a backup can go depends on the browser, so say which one she has
      rather than promising a share sheet that may never appear. */
@@ -3178,13 +3313,9 @@
     lock.release().catch(function () {});
   }
 
-  /* Any sheet at all: reading the basics one-handed mid-feed is the case this
-     exists for, and a veil dropping over it would eat the next tap. */
-  function sheetOpen() {
-    return !$("editorScrim").hidden || !$("diaperScrim").hidden || !$("medScrim").hidden ||
-      !$("menuScrim").hidden || !$("logScrim").hidden || !$("guideScrim").hidden ||
-      !$("pasteScrim").hidden || !$("rescueScrim").hidden;
-  }
+  /* sheetOpen() lives with the sheets themselves: reading the basics one-handed
+     mid-feed is the case this exists for, and a veil dropping over any sheet
+     would eat the next tap. */
 
   function paintVeil() {
     $("veilTime").textContent = stopwatch(liveLeft() + liveRight());
@@ -3210,21 +3341,39 @@
 
   /* ---------------- keep it live ---------------- */
 
+  /* Which day the screen was drawn for. Midnight lands mid-feed often enough to
+     matter: Today's totals and the day headings both have to move on without
+     waiting for the next thing to be logged. */
+  var shownDay = dayKey(Date.now());
+
   setInterval(function () {
+    var day = dayKey(Date.now());
+    if (day !== shownDay) {
+      shownDay = day;
+      renderStats();
+      renderHistory();
+    }
+
     if (active) {
       tick();
       if (!$("dimVeil").hidden) paintVeil();
-    } else {
-      renderFeedCard();
-      renderDiaperCard();
+      return;
     }
+
+    /* Every "how long ago" on screen, the medicine line included — it was the
+       one that sat frozen while the other two counted up. */
+    renderFeedCard();
+    renderDiaperCard();
+    renderMedSince();
   }, 1000);
 
   document.addEventListener("visibilitychange", function () {
     if (document.hidden) { wakeLock = null; return; }   /* the browser drops the lock for us */
     feeds = loadFeeds();
     diapers = loadDiapers();
+    meds = loadMeds();
     active = loadActive();
+    shownDay = dayKey(Date.now());
     renderAll();
     wakeScreen();
   });

@@ -73,6 +73,16 @@ Then turn on Pages:
 - **Buzz** — the phone gives a short buzz when a feeding starts, switches sides, pauses or stops,
   so a tap in the dark is confirmed without looking. Turn it off under **Vibration** in the menu.
 
+### Getting out of a card
+
+Whenever something is open — a record, the menu, the newborn basics — the phone's **back swipe
+closes it**, the same as tapping Close. It won't close the app any more; that only happens when
+there's nothing open to close.
+
+Tapping the empty space beside a card closes it too, but **not while you're editing** — that
+would throw away what you'd typed. When a card is open for editing, only **Cancel** or **Save**
+will leave it.
+
 ### Diapers
 
 - Tap **Pee**, **Poop**, or **Both**. That opens a short form, already filled in with what you
@@ -96,6 +106,10 @@ Below them, feedings, diapers and medicines share one timeline, newest first, wi
 totals. The **All / Feeds / Diapers / Meds** buttons narrow it to one kind when you want to read just that — the
 day totals follow whichever view you pick, and the choice is remembered next time you open
 the app.
+
+It shows the last two weeks, with **Show older** at the bottom for another fortnight each time
+you tap it. That's just what's drawn on screen — nothing is deleted, and the spreadsheet, the
+doctor's summary and the backup always cover everything.
 
 ## Medicines
 
@@ -160,7 +174,7 @@ Tap the **⚙** button in the top-right (next to the **?**) for:
   the shared copy is named `…json.txt`; that's the same file, and Restore reads it back fine.
 - **Restore from backup** — reads that file back in. It skips records already in the log, so
   restoring twice won't create duplicates.
-- **Send an update** — the last three days as a message, for texting to the other phone. See
+- **Send an update** — the last week as a message, for texting to the other phone. See
   below.
 - **Paste an update** — the other end of that: paste in what was texted to you.
 - **Vibration** — on or off. Tap the line to switch it.
@@ -195,7 +209,7 @@ If both of you want to log things, run the app on both phones and send records o
 Her phone holds the real log; his sends what he recorded across.
 
 **On the phone that recorded something** — tap **⚙** → **Send an update**. That puts the last
-three days into a text message, ready to send to the other phone. It's a block of gibberish with
+week into a text message, ready to send to the other phone. It's a block of gibberish with
 a line above it explaining what it is; send the whole thing.
 
 **On the phone that keeps the log** — copy the message (long-press it → Copy), tap **⚙** →
@@ -206,8 +220,9 @@ Three things worth knowing:
 - **It only ever adds.** Anything already in the log is left exactly as it is. Nothing you wrote
   can be replaced by what arrives, and pasting the same message twice does nothing the second
   time — it'll say "Nothing new to add".
-- **Sending the same days again is fine**, and is the point of sending three days each time: if
-  a message never gets read, the next one still carries those records.
+- **Sending the same days again is fine**, and is the point of sending a whole week each time: if
+  a message never gets read, or you don't get round to pasting one in for a few days, the next
+  one still carries those records.
 - **If you both log the same nappy, it'll show up twice.** There's no way for two phones to know
   they mean the same one. Delete whichever you like — tap it, **Edit**, **Delete**.
 
