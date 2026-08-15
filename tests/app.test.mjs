@@ -10,7 +10,7 @@
  *
  * Screenshots land in a temp directory; the path is printed at the end.
  */
-import { readFile, mkdtemp } from 'node:fs/promises';
+import { readFile, writeFile, mkdtemp } from 'node:fs/promises';
 import { createReadStream } from 'node:fs';
 import { createServer } from 'node:http';
 import { extname, join, dirname } from 'node:path';
@@ -599,6 +599,53 @@ await sp.waitForTimeout(200);
 check('csv shares too', (await sp.evaluate(() => window.__shared)).length === 2);
 
 await shareCtx.close();
+
+// Chrome's share sheet takes only a handful of file types, and .json is not one
+// of them: the backup dropped into Downloads with no chance to send it to Drive.
+const pickyCtx = await browser.newContext({ viewport: { width: 412, height: 915 }, hasTouch: true });
+await pickyCtx.addInitScript(() => {
+  window.__shared = [];
+  const allowed = /\.(txt|csv|pdf|png|jpe?g)$/i;                 // roughly Chrome's list
+  Object.defineProperty(navigator, 'canShare', {
+    configurable: true,
+    value: data => !!(data && data.files) && data.files.every(f => allowed.test(f.name)),
+  });
+  Object.defineProperty(navigator, 'share', {
+    configurable: true,
+    value: async data => {
+      window.__shared.push({ name: data.files[0].name, body: await data.files[0].text() });
+    },
+  });
+});
+const pp = await pickyCtx.newPage();
+let pickyDownloads = 0;
+pp.on('download', () => { pickyDownloads++; });
+await pp.goto(BASE, { waitUntil: 'networkidle' });
+await pp.evaluate(() => localStorage.setItem('nursinglog.entries.v1', JSON.stringify(
+  [{ id: 'x', start: Date.now() - 3600000, leftSec: 600, rightSec: 0, endSide: 'L', notes: '' }])));
+await pp.reload({ waitUntil: 'networkidle' });
+
+await pp.click('#menuBtn');
+await pp.click('#exportJson');
+await pp.waitForTimeout(300);
+const picky = await pp.evaluate(() => window.__shared);
+const kept = picky[0] || { name: '', body: '{}' };            // nothing shared: the checks below say so
+check('a backup Chrome refuses as json is shared as text',
+  picky.length === 1 && /^nursing-log-backup-\d+\.json\.txt$/.test(kept.name));
+check('the renamed backup still holds the records',
+  (JSON.parse(kept.body).entries || []).length === 1);
+check('it reaches the share sheet instead of Downloads', pickyDownloads === 0);
+
+// and that file comes back in through restore
+const keptPath = join(SHOTS, 'shared-backup.json.txt');
+await writeFile(keptPath, kept.body);
+await pp.evaluate(() => localStorage.removeItem('nursinglog.entries.v1'));
+await pp.reload({ waitUntil: 'networkidle' });
+await pp.click('#menuBtn');
+await pp.setInputFiles('#fileInput', keptPath);
+await pp.waitForTimeout(400);
+check('a shared .txt backup restores', (await pp.$$('.entry')).length === 1);
+await pickyCtx.close();
 
 // backing out of the share sheet must not claim a backup happened.
 // Its own context: a reload re-runs the init script and would undo an in-page stub.

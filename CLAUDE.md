@@ -166,6 +166,13 @@ Interaction rules worth preserving:
   download otherwise. An `AbortError` means she dismissed the sheet — nothing was saved, so it
   must not fall back *or* record a backup. Only the JSON backup marks
   `nursinglog.backup.v1`; the CSV is a report, not a backup.
+- **Chrome's share sheet refuses a `.json` file.** It allows a short list of extensions — text,
+  CSV, PDF, images, media — so `canShare({files})` said no and the backup silently went to
+  Downloads with no way to reach Drive. `shareBlob()` therefore retries textual files under a
+  `.txt` name (`…-backup-20260815.json.txt`); the download fallback keeps the plain `.json`.
+  Restore parses the contents, not the extension, and `#fileInput` accepts `.txt` for this
+  reason. Don't test the share path with a stub that approves everything — the suite models
+  the allowlist.
 - **The nudge counts from the oldest record when there is no backup yet**, so a log started
   today isn't nagged. Overdue is 10 days; it shows as a dot on the menu button and a highlighted
   line inside the menu, and nowhere else — this app does not get banners.

@@ -419,7 +419,7 @@
     <div class="sheet-actions">
       <button class="btn wide" id="menuClose">Close</button>
     </div>
-    <input type="file" id="fileInput" accept="application/json,.json" hidden>
+    <input type="file" id="fileInput" accept="application/json,.json,text/plain,.txt" hidden>
   </div>
 </div>
 
@@ -1632,11 +1632,27 @@
     shareBlob(filename, new Blob([text], { type: mime }), mime, onKept);
   }
 
-  function shareBlob(filename, blob, mime, onKept) {
-    var file = null;
-    try { file = new File([blob], filename, { type: mime }); } catch (err) { file = null; }
+  /* Chrome hands the share sheet only a short allowlist of file types, and .json
+     isn't on it, so a backup slid silently into Downloads instead of offering
+     Drive. The same bytes named .txt go through, and restore reads the contents
+     rather than the extension. PDFs and CSVs are on the list already. */
+  function shareableFile(filename, blob, mime) {
+    if (!navigator.share || !navigator.canShare) return null;
+    try {
+      var file = new File([blob], filename, { type: mime });
+      return navigator.canShare({ files: [file] }) ? file : null;
+    } catch (err) {
+      return null;
+    }
+  }
 
-    if (file && navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+  function shareBlob(filename, blob, mime, onKept) {
+    var file = shareableFile(filename, blob, mime);
+    if (!file && /^(text\/|application\/json)/.test(mime || "")) {
+      file = shareableFile(filename + ".txt", blob, "text/plain");
+    }
+
+    if (file) {
       navigator.share({ files: [file] }).then(function () {
         if (onKept) onKept();
       }).catch(function (err) {

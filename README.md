@@ -100,9 +100,10 @@ Tap the **⚙** button in the top-right for:
   sheet, so you can email it ahead of an appointment or show it on the phone.
 - **Export spreadsheet (CSV)** — feedings and diapers in one chronological sheet, with columns
   for per-side minutes, ending side, pee/poop, and poop size. Opens in Excel or Google Sheets, handy for the pediatrician.
-- **Save backup file** — a `.json` file with everything. On the phone this opens Android's share
+- **Save backup file** — a file with everything in it. On the phone this opens Android's share
   sheet, so you can send it straight to Google Drive, email it to yourself, or save it to Files —
-  it doesn't just vanish into Downloads.
+  it doesn't just vanish into Downloads. Chrome won't put a `.json` file on the share sheet, so
+  the shared copy is named `…json.txt`; that's the same file, and Restore reads it back fine.
 - **Restore from backup** — reads that file back in. It skips records already in the log, so
   restoring twice won't create duplicates.
 
