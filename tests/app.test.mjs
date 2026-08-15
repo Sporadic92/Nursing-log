@@ -462,6 +462,108 @@ const migRight = await mig.textContent('#rightVal');
 check('v1 timer elapsed sensible (' + migRight + ')', toSec(migRight) >= 59 && toSec(migRight) <= 65);
 await migCtx.close();
 
+// ---------- backup nudge and sharing ----------
+const menuText = async () => {
+  await page.click('#menuBtn');
+  const t = await page.textContent('#backupStatus');
+  await page.click('#menuClose');
+  return t;
+};
+
+check('backed-up status is shown', (await menuText()).includes('Last backup'));
+check('no nudge right after backing up', !(await page.isVisible('#backupDot')));
+
+// a log that has gone a long time without a backup gets a quiet dot
+await page.evaluate(() => {
+  localStorage.setItem('nursinglog.backup.v1', String(Date.now() - 12 * 86400000));
+});
+await page.reload({ waitUntil: 'networkidle' });
+check('overdue backup raises the dot', await page.isVisible('#backupDot'));
+check('overdue status names the age', (await menuText()).includes('12 days ago'));
+check('overdue status is highlighted',
+  await page.$eval('#backupStatus', n => n.classList.contains('due')));
+
+// never backed up is counted from the oldest record, not from install
+await page.evaluate(() => localStorage.removeItem('nursinglog.backup.v1'));
+await page.reload({ waitUntil: 'networkidle' });
+check('never-backed-up shows as such', (await menuText()).includes('Never backed up'));
+check('recent log is not nagged', !(await page.isVisible('#backupDot')));
+
+await page.evaluate(() => {
+  const feeds = JSON.parse(localStorage.getItem('nursinglog.entries.v1'));
+  feeds[feeds.length - 1].start = Date.now() - 30 * 86400000;    // a month of history
+  localStorage.setItem('nursinglog.entries.v1', JSON.stringify(feeds));
+});
+await page.reload({ waitUntil: 'networkidle' });
+check('old log with no backup is nudged', await page.isVisible('#backupDot'));
+
+// backing up clears the nudge
+await page.click('#menuBtn');
+const [fresh] = await Promise.all([page.waitForEvent('download'), page.click('#exportJson')]);
+await fresh.saveAs(join(SHOTS, 'nudge-clear.json'));
+check('backing up clears the dot', !(await page.isVisible('#backupDot')));
+check('backing up is confirmed', (await page.textContent('#toastText')).includes('Backed up'));
+check('status resets to today', (await menuText()).includes('today'));
+
+// where the share sheet exists, the file goes to it instead of Downloads
+const shareCtx = await browser.newContext({ viewport: { width: 412, height: 915 }, hasTouch: true });
+await shareCtx.addInitScript(() => {
+  window.__shared = [];
+  Object.defineProperty(navigator, 'canShare', { configurable: true, value: () => true });
+  Object.defineProperty(navigator, 'share', {
+    configurable: true,
+    value: data => {
+      window.__shared.push(data.files.map(f => f.name));
+      return Promise.resolve();
+    },
+  });
+});
+const sp = await shareCtx.newPage();
+await sp.goto(BASE, { waitUntil: 'networkidle' });
+await sp.evaluate(() => localStorage.setItem('nursinglog.entries.v1', JSON.stringify(
+  [{ id: 'x', start: Date.now() - 3600000, leftSec: 600, rightSec: 0, endSide: 'L', notes: '' }])));
+await sp.reload({ waitUntil: 'networkidle' });
+
+await sp.click('#menuBtn');
+await sp.click('#exportJson');
+await sp.waitForTimeout(200);
+const shared = await sp.evaluate(() => window.__shared);
+check('backup goes to the share sheet', shared.length === 1 && /nursing-log-backup-\d+\.json/.test(shared[0][0]));
+check('sharing counts as a backup', (await sp.textContent('#backupStatus')).includes('today'));
+
+await sp.click('#menuBtn');                       // exporting closes the menu behind it
+await sp.click('#exportCsv');
+await sp.waitForTimeout(200);
+check('csv shares too', (await sp.evaluate(() => window.__shared)).length === 2);
+
+await shareCtx.close();
+
+// backing out of the share sheet must not claim a backup happened.
+// Its own context: a reload re-runs the init script and would undo an in-page stub.
+const abortCtx = await browser.newContext({ viewport: { width: 412, height: 915 }, hasTouch: true });
+await abortCtx.addInitScript(() => {
+  Object.defineProperty(navigator, 'canShare', { configurable: true, value: () => true });
+  Object.defineProperty(navigator, 'share', {
+    configurable: true,
+    value: () => Promise.reject(Object.assign(new Error('cancelled'), { name: 'AbortError' })),
+  });
+});
+const ap = await abortCtx.newPage();
+let abortDownloads = 0;
+ap.on('download', () => { abortDownloads++; });
+await ap.goto(BASE, { waitUntil: 'networkidle' });
+await ap.evaluate(() => localStorage.setItem('nursinglog.entries.v1', JSON.stringify(
+  [{ id: 'x', start: Date.now() - 3600000, leftSec: 600, rightSec: 0, endSide: 'L', notes: '' }])));
+await ap.reload({ waitUntil: 'networkidle' });
+
+await ap.click('#menuBtn');
+await ap.click('#exportJson');
+await ap.waitForTimeout(400);
+check('cancelled share is not recorded as a backup',
+  (await ap.textContent('#backupStatus')).includes('Never backed up'));
+check('cancelled share does not fall back to a download', abortDownloads === 0);
+await abortCtx.close();
+
 // ---------- screen wake and dimming ----------
 const wake = () => page.evaluate(() => window.__wake);
 check('no wake lock while idle', !(await wake()).held);

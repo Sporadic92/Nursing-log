@@ -96,9 +96,15 @@ Tap the **⚙** button in the top-right for:
 
 - **Export spreadsheet (CSV)** — feedings and diapers in one chronological sheet, with columns
   for per-side minutes, ending side, pee/poop, and poop size. Opens in Excel or Google Sheets, handy for the pediatrician.
-- **Save backup file** — a `.json` file with everything. Keep one in Google Drive now and then.
+- **Save backup file** — a `.json` file with everything. On the phone this opens Android's share
+  sheet, so you can send it straight to Google Drive, email it to yourself, or save it to Files —
+  it doesn't just vanish into Downloads.
 - **Restore from backup** — reads that file back in. It skips records already in the log, so
   restoring twice won't create duplicates.
+
+If it's been more than about ten days since the last backup, a small dot appears on the **⚙**
+button and the menu says how long it's been. That's the whole reminder — no banners, no popups.
+Backing up clears it.
 
 ## Making changes later
 

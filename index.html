@@ -73,6 +73,13 @@
     display: grid; place-items: center; cursor: pointer;
   }
   .icon-btn:active { background: var(--surface-2); }
+  .icon-btn { position: relative; }
+  .nudge {
+    position: absolute; top: 2px; right: 2px; width: 11px; height: 11px;
+    border-radius: 50%; background: var(--accent); border: 2px solid var(--bg);
+  }
+  .backup-status { margin: -8px 0 14px; font-size: 14px; color: var(--muted); }
+  .backup-status.due { color: var(--accent); font-weight: 600; }
 
   .card {
     background: var(--surface); border: 1px solid var(--line);
@@ -244,7 +251,7 @@
 
   <header>
     <h1>Nursing Log</h1>
-    <button class="icon-btn" id="menuBtn" aria-label="Menu">&#9881;</button>
+    <button class="icon-btn" id="menuBtn" aria-label="Menu">&#9881;<span class="nudge" id="backupDot" hidden></span></button>
   </header>
 
   <!-- Feeding -->
@@ -403,8 +410,9 @@
 <div class="scrim" id="menuScrim" hidden>
   <div class="sheet" role="dialog" aria-modal="true">
     <h3>Data &amp; backup</h3>
+    <p class="backup-status" id="backupStatus"></p>
     <button class="menu-item" id="exportCsv">Export spreadsheet (CSV)<small>Feedings and diapers, for Excel or Google Sheets</small></button>
-    <button class="menu-item" id="exportJson">Save backup file<small>Everything, so you can restore it later</small></button>
+    <button class="menu-item" id="exportJson">Save backup file<small>Send it to Drive, email, or wherever you keep files</small></button>
     <button class="menu-item" id="importJson">Restore from backup<small>Adds anything missing from a backup file</small></button>
     <button class="menu-item" id="aboutBtn">About this app<small>Where your data lives</small></button>
     <div class="sheet-actions">
@@ -430,6 +438,8 @@
   var DIAPERS_KEY = "nursinglog.diapers.v1";
   var ACTIVE_KEY = "nursinglog.active.v1";
   var FILTER_KEY = "nursinglog.filter.v1";
+  var BACKUP_KEY = "nursinglog.backup.v1";
+  var BACKUP_NUDGE_MS = 10 * 86400000;
   var SIDE_NAME = { L: "Left", R: "Right", B: "Both" };
 
   var $ = function (id) { return document.getElementById(id); };
@@ -832,6 +842,7 @@
     renderDiaperCard();
     renderStats();
     renderHistory();
+    renderBackupStatus();
   }
 
   /* ---------------- timer actions ---------------- */
@@ -1251,6 +1262,75 @@
     setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
   }
 
+  /* Android can hand a file straight to Drive or email, which is the difference
+     between a backup she keeps and one that rots in Downloads. Falls back to a
+     plain download wherever sharing files isn't offered. */
+  function deliver(filename, text, mime, onKept) {
+    var file = null;
+    try { file = new File([text], filename, { type: mime }); } catch (err) { file = null; }
+
+    if (file && navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+      navigator.share({ files: [file] }).then(function () {
+        if (onKept) onKept();
+      }).catch(function (err) {
+        if (err && err.name === "AbortError") return;   /* she backed out; nothing was saved */
+        download(filename, text, mime);
+        if (onKept) onKept();
+      });
+      return;
+    }
+
+    download(filename, text, mime);
+    if (onKept) onKept();
+  }
+
+  function lastBackupMs() {
+    var v = parseInt(localStorage.getItem(BACKUP_KEY) || "", 10);
+    return isNaN(v) ? 0 : v;
+  }
+
+  function oldestRecordMs() {
+    var oldest = 0;
+    if (feeds.length) oldest = feeds[feeds.length - 1].start;
+    if (diapers.length) {
+      var d = diapers[diapers.length - 1].time;
+      oldest = oldest ? Math.min(oldest, d) : d;
+    }
+    return oldest;
+  }
+
+  /* Never backed up? Count from the first record, so a new log isn't nagged on day one. */
+  function backupOverdue() {
+    var base = lastBackupMs() || oldestRecordMs();
+    if (!base) return false;
+    return Date.now() - base > BACKUP_NUDGE_MS;
+  }
+
+  function daysAgoText(ms) {
+    var days = Math.floor((Date.now() - ms) / 86400000);
+    if (days < 1) return "today";
+    if (days === 1) return "yesterday";
+    return days + " days ago";
+  }
+
+  function renderBackupStatus() {
+    var overdue = backupOverdue();
+    $("backupDot").hidden = !overdue;
+
+    var last = lastBackupMs();
+    var el = $("backupStatus");
+    el.textContent = !feeds.length && !diapers.length ? "Nothing to back up yet"
+      : !last ? "Never backed up"
+      : "Last backup " + daysAgoText(last);
+    el.classList.toggle("due", overdue);
+  }
+
+  function markBackedUp() {
+    localStorage.setItem(BACKUP_KEY, String(Date.now()));
+    renderBackupStatus();
+    toast("Backed up");
+  }
+
   function stamp() {
     var d = new Date();
     return d.getFullYear() + pad(d.getMonth() + 1) + pad(d.getDate());
@@ -1288,7 +1368,7 @@
       }
     });
 
-    download("nursing-log-" + stamp() + ".csv",
+    deliver("nursing-log-" + stamp() + ".csv",
       rows.map(function (r) { return r.map(csvCell).join(","); }).join("\r\n"), "text/csv");
     $("menuScrim").hidden = true;
   });
@@ -1301,7 +1381,8 @@
       entries: feeds,
       diapers: diapers
     };
-    download("nursing-log-backup-" + stamp() + ".json", JSON.stringify(payload, null, 2), "application/json");
+    deliver("nursing-log-backup-" + stamp() + ".json", JSON.stringify(payload, null, 2),
+      "application/json", markBackedUp);
     $("menuScrim").hidden = true;
   });
 
@@ -1375,8 +1456,9 @@
       "Nursing Log\n\n" +
       "Everything you record is stored only on this phone, in this browser. " +
       "Nothing is sent anywhere and no account is needed.\n\n" +
-      "Because of that, use \"Save backup file\" now and then. " +
-      "Clearing the browser's site data would erase the log."
+      "Because of that, use \"Save backup file\" now and then — it offers to send the file " +
+      "to Google Drive or email, and a dot appears on this menu button when it has been a " +
+      "while.\n\nClearing the browser's site data would erase the log."
     );
   });
 
