@@ -51,6 +51,27 @@ const browser = await chromium.launch();
 const ctx = await browser.newContext({
   viewport: { width: 412, height: 915 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true,
 });
+/* Stub the wake lock so the suite can see whether the app asks for one.
+   dimMs is huge by default: a veil appearing mid-test would swallow clicks. */
+function wakeStub(dimMs) {
+  window.NL_DIM_MS = dimMs;
+  window.__wake = { taken: 0, released: 0, held: false };
+  Object.defineProperty(navigator, 'wakeLock', {
+    configurable: true,
+    value: {
+      request: () => {
+        window.__wake.taken++;
+        window.__wake.held = true;
+        return Promise.resolve({
+          addEventListener() {},
+          release: () => { window.__wake.released++; window.__wake.held = false; return Promise.resolve(); },
+        });
+      },
+    },
+  });
+}
+await ctx.addInitScript(wakeStub, 600000);
+
 const page = await ctx.newPage();
 const errors = [];
 page.on('pageerror', e => errors.push('pageerror: ' + e.message));
@@ -325,7 +346,6 @@ check('notes box returns when editing', await page.isVisible('#dNotesWrap'));
 await page.click('#diaperCancel');
 await (await page.$$('.entry'))[0].click();
 await page.click('#diaperEdit');
-page.once('dialog', d => d.accept());
 await page.click('#diaperDelete');
 
 // ---------- filter views ----------
@@ -388,10 +408,18 @@ check('backup keeps ending side', parsed.entries.every(e => e.endSide === 'L' ||
 
 // delete one of each, then restore
 await openRow(0);
-page.once('dialog', d => d.accept());
 await page.click(await page.isVisible('#diaperDelete') ? '#diaperDelete' : '#editorDelete');
 const afterDelete = (await page.$$('.entry')).length;
 check('delete removed one', afterDelete === beforeReload - 1);
+check('delete offers undo instead of a confirm', await page.isVisible('#toastAction'));
+
+await page.click('#toastAction');
+check('undo restores the record', (await page.$$('.entry')).length === beforeReload);
+check('undo confirms', (await page.textContent('#toastText')).includes('restored'));
+
+await openRow(0);
+await page.click(await page.isVisible('#diaperDelete') ? '#diaperDelete' : '#editorDelete');
+check('deleted again', (await page.$$('.entry')).length === beforeReload - 1);
 
 await page.click('#menuBtn');
 await page.setInputFiles('#fileInput', jsonPath);
@@ -433,6 +461,57 @@ check('v1 timer counts on its side', (await mig.getAttribute('[data-switch="R"]'
 const migRight = await mig.textContent('#rightVal');
 check('v1 timer elapsed sensible (' + migRight + ')', toSec(migRight) >= 59 && toSec(migRight) <= 65);
 await migCtx.close();
+
+// ---------- screen wake and dimming ----------
+const wake = () => page.evaluate(() => window.__wake);
+check('no wake lock while idle', !(await wake()).held);
+await page.click('[data-start="L"]');
+await page.waitForTimeout(120);
+check('feeding takes a wake lock', (await wake()).held);
+check('one lock, not one per tick', (await wake()).taken === 1);
+await page.click('#stopBtn');
+check('stopping releases the wake lock', !(await wake()).held);
+await openRow(0);
+await page.click('#editorDelete');                   // drop the feed this section created
+
+// dimming, in its own context so the veil can't swallow other tests' clicks
+const dimCtx = await browser.newContext({ viewport: { width: 412, height: 915 }, hasTouch: true });
+await dimCtx.addInitScript(wakeStub, 900);
+const dim = await dimCtx.newPage();
+await dim.goto(BASE, { waitUntil: 'networkidle' });
+
+await dim.waitForTimeout(1400);
+check('idle screen never dims', !(await dim.isVisible('#dimVeil')));
+
+await dim.click('[data-start="L"]');
+check('screen starts undimmed', !(await dim.isVisible('#dimVeil')));
+await dim.waitForTimeout(1400);
+check('screen dims when left alone', await dim.isVisible('#dimVeil'));
+check('dim still shows the clock', /\d+:\d\d/.test(await dim.textContent('#veilTime')));
+check('dim names the side', (await dim.textContent('#veilSide')).includes('Left'));
+check('wake lock held while dim', (await dim.evaluate(() => window.__wake)).held);
+
+const dimmedAt = await dim.textContent('#veilTime');
+await dim.waitForTimeout(1100);
+check('dim clock keeps counting', await dim.textContent('#veilTime') !== dimmedAt);
+
+// a tap wakes the screen instead of reaching the buttons underneath
+await dim.click('#dimVeil');
+check('tap wakes the screen', !(await dim.isVisible('#dimVeil')));
+check('tap did not stop the feed', await dim.isVisible('#runningView'));
+check('feed still running', (await dim.$$('.entry')).length === 0);
+
+// an open sheet holds the dim off
+await dim.click('#menuBtn');
+await dim.waitForTimeout(1400);
+check('does not dim over a sheet', !(await dim.isVisible('#dimVeil')));
+await dim.click('#menuClose');
+
+await dim.click('#stopBtn');
+await dim.waitForTimeout(1400);
+check('no dimming once the feed ends', !(await dim.isVisible('#dimVeil')));
+check('wake lock released with the feed', !(await dim.evaluate(() => window.__wake)).held);
+await dimCtx.close();
 
 // ---------- PWA ----------
 check('service worker active', await page.evaluate(() => navigator.serviceWorker.ready.then(r => !!r.active).catch(() => false)));

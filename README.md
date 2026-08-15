@@ -47,6 +47,10 @@ Then turn on Pages:
 - **Switch sides** — tap the other tile. Each side keeps its own running total, and the big
   number on top is the combined time. Time already banked on a side stops counting the moment
   she switches away from it.
+- **The screen stays on** while a feed is timing, so you never have to unlock the phone to see
+  the clock. After half a minute untouched it goes black except for the time and the side, dim
+  enough for a dark room. Tap anywhere to bring the app back — that first tap only wakes the
+  screen, it can't press anything.
 - **Done** — tap **Stop & Save**. The feeding is saved with the start time, the minutes on each
   side, a Left / Right / Both label worked out from those, and **which side it ended on** —
   whichever tile was running when she stopped.
@@ -54,7 +58,8 @@ Then turn on Pages:
   on: the side, the start time, the minutes on each side, which side it ended on, and the notes.
   Nothing on that card responds to a tap, so checking a feeding can't change it.
 - **Fix or annotate it** — tap **Edit** and the same card comes to life, ready to change the
-  side, time, per-side minutes, ending side, or notes, or to delete it. Picking **Both** in the editor gives separate
+  side, time, per-side minutes, ending side, or notes, or to delete it. Deleting offers **Undo** for a few seconds
+  afterwards, so a wrong tap is recoverable. Picking **Both** in the editor gives separate
   boxes for left and right minutes plus an **Ended on** choice; picking one side gives a single
   box, since the ending side is then obvious.
 - **Forgot to hit start?** Tap **+ Add a past feeding**.

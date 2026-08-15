@@ -215,6 +215,17 @@
   .menu-item:last-of-type { border-bottom: none; }
   .menu-item small { display: block; color: var(--muted); font-size: 13px; }
 
+  /* While a feed runs the screen is held awake, so it goes dark on its own
+     instead — bright enough to read the clock, dim enough for a dark nursery. */
+  .veil {
+    position: fixed; inset: 0; background: #000; z-index: 45;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 6px; cursor: pointer;
+  }
+  .veil-time { font-size: 60px; font-weight: 200; font-variant-numeric: tabular-nums; color: #5f5f5f; }
+  .veil-side { font-size: 16px; color: #454545; }
+  .veil-hint { position: absolute; bottom: calc(44px + var(--safe-bottom)); font-size: 13px; color: #2f2f2f; }
+
   .toast {
     position: fixed; left: 50%; transform: translateX(-50%);
     bottom: calc(20px + var(--safe-bottom)); background: var(--text); color: var(--bg);
@@ -401,6 +412,12 @@
     </div>
     <input type="file" id="fileInput" accept="application/json,.json" hidden>
   </div>
+</div>
+
+<div class="veil" id="dimVeil" hidden>
+  <div class="veil-time" id="veilTime">0:00</div>
+  <div class="veil-side" id="veilSide"></div>
+  <div class="veil-hint">Tap to wake</div>
 </div>
 
 <div class="toast" id="toast" hidden><span id="toastText"></span><button id="toastAction" hidden>Undo</button></div>
@@ -621,7 +638,7 @@
     } : null;
     box.hidden = false;
     clearTimeout(toastTimer);
-    toastTimer = setTimeout(function () { box.hidden = true; }, undoFn ? 5000 : 2600);
+    toastTimer = setTimeout(function () { box.hidden = true; }, undoFn ? 6000 : 2600);
   }
 
   /* ---------------- timer maths ---------------- */
@@ -830,6 +847,7 @@
         segStart: now
       });
       renderAll();
+      wakeScreen();
     });
   });
 
@@ -870,6 +888,7 @@
     saveFeeds(list);
     setActive(null);
     renderAll();
+    wakeScreen();
     toast("Saved " + durationText(feedMinutes(entry)) + " · " + SIDE_NAME[feedSide(entry)]);
   });
 
@@ -877,6 +896,7 @@
     if (confirm("Discard this feeding without saving?")) {
       setActive(null);
       renderAll();
+      wakeScreen();
     }
   });
 
@@ -1054,13 +1074,23 @@
     toast("Saved");
   });
 
+  /* Deleting is undoable rather than confirmed: a confirm at 3 a.m. gets tapped
+     through on reflex, and this way the record is genuinely recoverable. */
   $("editorDelete").addEventListener("click", function () {
-    if (!editingFeedId || !confirm("Delete this feeding?")) return;
-    var id = editingFeedId;
-    saveFeeds(feeds.filter(function (e) { return e.id !== id; }));
+    var gone = findById(feeds, "id", editingFeedId);
+    if (!gone) return;
+
+    saveFeeds(feeds.filter(function (e) { return e.id !== gone.id; }));
     $("editorScrim").hidden = true;
     renderAll();
-    toast("Deleted");
+
+    toast("Feeding deleted", function () {
+      var list = feeds.slice();
+      list.push(gone);
+      saveFeeds(list);
+      renderAll();
+      toast("Feeding restored");
+    });
   });
 
   /* ---------------- diapers ---------------- */
@@ -1174,12 +1204,20 @@
   });
 
   $("diaperDelete").addEventListener("click", function () {
-    if (!editingDiaperId || !confirm("Delete this diaper?")) return;
-    var id = editingDiaperId;
-    saveDiapers(diapers.filter(function (d) { return d.id !== id; }));
+    var gone = findById(diapers, "id", editingDiaperId);
+    if (!gone) return;
+
+    saveDiapers(diapers.filter(function (d) { return d.id !== gone.id; }));
     $("diaperScrim").hidden = true;
     renderAll();
-    toast("Deleted");
+
+    toast("Diaper deleted", function () {
+      var list = diapers.slice();
+      list.push(gone);
+      saveDiapers(list);
+      renderAll();
+      toast("Diaper restored");
+    });
   });
 
   /* ---------------- menu, export, import ---------------- */
@@ -1342,23 +1380,82 @@
     );
   });
 
+  /* ---------------- screen wake and dimming ---------------- */
+
+  /* Test hook: the suite shortens this so it needn't wait half a minute. */
+  var DIM_AFTER = window.NL_DIM_MS || 30000;
+  var dimTimer = null;
+  var wakeLock = null;
+
+  function requestWake() {
+    if (!navigator.wakeLock || wakeLock) return;
+    navigator.wakeLock.request("screen").then(function (lock) {
+      wakeLock = lock;
+      lock.addEventListener("release", function () { wakeLock = null; });
+    }).catch(function () { /* denied or unsupported; dimming still works */ });
+  }
+
+  function releaseWake() {
+    if (!wakeLock) return;
+    var lock = wakeLock;
+    wakeLock = null;
+    lock.release().catch(function () {});
+  }
+
+  function sheetOpen() {
+    return !$("editorScrim").hidden || !$("diaperScrim").hidden || !$("menuScrim").hidden;
+  }
+
+  function paintVeil() {
+    $("veilTime").textContent = stopwatch(liveLeft() + liveRight());
+    $("veilSide").textContent = SIDE_NAME[active.side] + " side";
+  }
+
+  /* Called on any touch, and whenever the timer starts or stops. */
+  function wakeScreen() {
+    clearTimeout(dimTimer);
+    $("dimVeil").hidden = true;
+
+    if (!active) { releaseWake(); return; }
+
+    requestWake();
+    dimTimer = setTimeout(function () {
+      if (!active || sheetOpen()) return;
+      paintVeil();
+      $("dimVeil").hidden = false;
+    }, DIM_AFTER);
+  }
+
+  document.addEventListener("pointerdown", wakeScreen, true);
+
   /* ---------------- keep it live ---------------- */
 
   setInterval(function () {
-    if (active) tick();
-    else { renderFeedCard(); renderDiaperCard(); }
+    if (active) {
+      tick();
+      if (!$("dimVeil").hidden) paintVeil();
+    } else {
+      renderFeedCard();
+      renderDiaperCard();
+    }
   }, 1000);
 
   document.addEventListener("visibilitychange", function () {
-    if (!document.hidden) {
-      feeds = loadFeeds();
-      diapers = loadDiapers();
-      active = loadActive();
-      renderAll();
-    }
+    if (document.hidden) { wakeLock = null; return; }   /* the browser drops the lock for us */
+    feeds = loadFeeds();
+    diapers = loadDiapers();
+    active = loadActive();
+    renderAll();
+    wakeScreen();
   });
 
+  /* Ask the browser not to evict the log if the phone runs short on space. */
+  if (navigator.storage && navigator.storage.persist) {
+    navigator.storage.persist().catch(function () {});
+  }
+
   renderAll();
+  wakeScreen();
 
   if ("serviceWorker" in navigator && location.protocol.indexOf("http") === 0) {
     window.addEventListener("load", function () {
