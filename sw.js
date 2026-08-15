@@ -1,5 +1,5 @@
 /* Offline support for Nursing Log. Bump CACHE when files change. */
-var CACHE = "nursing-log-v11";
+var CACHE = "nursing-log-v12";
 var ASSETS = [
   "./",
   "./index.html",

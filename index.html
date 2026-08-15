@@ -91,10 +91,13 @@
 
   .since { text-align: center; color: var(--muted); font-size: 15px; }
   .since b { color: var(--text); font-weight: 600; }
+  .since-sub { text-align: center; color: var(--muted); font-size: 13px; margin-top: 3px; }
+  .since-sub b { color: var(--text); font-weight: 600; }
   .elapsed {
     text-align: center; font-size: 52px; font-weight: 300; letter-spacing: -0.02em;
     font-variant-numeric: tabular-nums; margin: 4px 0 2px;
   }
+  .elapsed.paused { color: var(--muted); }
   .prompt { text-align: center; color: var(--muted); font-size: 14px; margin: 14px 0 10px; }
 
   .row-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
@@ -137,6 +140,10 @@
   }
   @media (prefers-color-scheme: dark) { .big-btn { color: #2a1b23; } }
   .big-btn:active { filter: brightness(0.95); }
+  /* Pause sits above Stop & Save and must not read as the same button. */
+  .big-btn.secondary {
+    background: var(--surface-2); color: var(--text); border: 1px solid var(--line);
+  }
   .text-btn {
     width: 100%; background: none; border: none; color: var(--muted);
     font-size: 15px; padding: 12px; margin-top: 4px; cursor: pointer; font-family: inherit;
@@ -324,6 +331,7 @@
   <section class="card">
     <div id="idleView">
       <div class="since" id="sinceText">No feedings recorded yet</div>
+      <div class="since-sub" id="sinceEnd" hidden></div>
       <div class="prompt">Start a feeding</div>
       <div class="row-2">
         <button class="side-btn" data-start="L">Left<small>start here</small></button>
@@ -335,7 +343,7 @@
     <div id="runningView" hidden>
       <div class="since">Feeding since <b id="startedAt">&mdash;</b></div>
       <div class="elapsed" id="elapsed">0:00</div>
-      <div class="prompt" style="margin-top:0">Tap the other side to switch</div>
+      <div class="prompt" style="margin-top:0" id="runPrompt">Tap the other side to switch</div>
       <div class="row-2">
         <button class="side-tile" data-switch="L">
           <div class="lbl">Left</div>
@@ -348,6 +356,7 @@
           <div class="dot" id="rightDot"></div>
         </button>
       </div>
+      <button class="big-btn secondary" id="pauseBtn">Pause</button>
       <button class="big-btn" id="stopBtn">Stop &amp; Save</button>
       <button class="text-btn" id="cancelBtn">Cancel without saving</button>
     </div>
@@ -539,6 +548,7 @@
     <button class="menu-item" id="importJson">Restore from backup<small>Adds anything missing from a backup file</small></button>
     <button class="menu-item" id="whatsNew">What's new<small id="versionLine">Version</small></button>
     <button class="menu-item" id="aboutBtn">About this app<small>Where your data lives</small></button>
+    <button class="menu-item" id="hapticsBtn">Vibration<small id="hapticsLine"></small></button>
     <div class="sheet-actions">
       <button class="btn wide" id="menuClose">Close</button>
     </div>
@@ -587,6 +597,7 @@
   var ACTIVE_KEY = "nursinglog.active.v1";
   var FILTER_KEY = "nursinglog.filter.v1";
   var BACKUP_KEY = "nursinglog.backup.v1";
+  var HAPTIC_KEY = "nursinglog.haptics.v1";
   var BACKUP_NUDGE_MS = 10 * 86400000;
   var SIDE_NAME = { L: "Left", R: "Right", B: "Both" };
 
@@ -706,6 +717,12 @@
      up an update yet. Add a new entry at the top whenever you ship, and bump
      CACHE in sw.js in the same commit. */
   var VERSIONS = [
+    { v: "1.12", date: "15 Aug 2026", notes: [
+      "Pause: a burp, a diaper change or a nap mid-feed no longer counts as time on the breast. Tap Resume, or tap a side to pick back up there.",
+      "Stopped a feed by accident? The Saved message now offers Resume, and the timer comes back exactly where it was.",
+      "The card points at the side you finished on, since that's where the next feed starts, and it now shows how long ago the last feed started and how long ago it finished.",
+      "A short buzz when a feeding starts, switches or stops, so a tap in the dark is confirmed. Turn it off under Vibration in the menu."
+    ] },
     { v: "1.11", date: "15 Aug 2026", notes: [
       "A ? button next to the gear: newborn basics, for the things that are hard to remember at 4 a.m.",
       "How often to feed, hunger cues, how many wet and dirty diapers to expect on each day of the first week, latch and sore nipples, safe sleep, and when something is worth a phone call.",
@@ -789,11 +806,23 @@
     return {
       id: e.id || newId(),
       start: e.start,
+      end: feedEnd({ start: e.start, end: e.end, leftSec: leftSec, rightSec: rightSec }),
       leftSec: leftSec,
       rightSec: rightSec,
       endSide: endSide,
       notes: typeof e.notes === "string" ? e.notes : ""
     };
+  }
+
+  /* When a feeding finished, in wall-clock time. Only stored since 1.12, and a
+     paused feed ends later than its minutes suggest, so anything without one
+     falls back to start plus the time on the breast. That fallback is also the
+     earliest an end can honestly be, which is what makes a stored one safe to
+     keep across an edit: shorten the minutes and it stops being possible, so it
+     is recomputed rather than left describing the feeding it used to be. */
+  function feedEnd(e) {
+    var earliest = e.start + (e.leftSec + e.rightSec) * 1000;
+    return typeof e.end === "number" && e.end >= earliest ? e.end : earliest;
   }
 
   var SIZE_NAME = { S: "Small", M: "Medium", L: "Large" };
@@ -912,7 +941,8 @@
           side: a.side === "B" ? "L" : a.side,
           leftSec: a.leftSec || 0,
           rightSec: a.rightSec || 0,
-          segStart: typeof a.segStart === "number" ? a.segStart : a.start
+          segStart: typeof a.segStart === "number" ? a.segStart : a.start,
+          paused: !!a.paused
         };
       }
     } catch (err) { /* ignore */ }
@@ -975,9 +1005,10 @@
   }
 
   var toastTimer = null;
-  function toast(msg, undoFn) {
+  function toast(msg, undoFn, label) {
     var box = $("toast"), action = $("toastAction");
     $("toastText").textContent = msg;
+    action.textContent = label || "Undo";
     action.hidden = !undoFn;
     action.onclick = undoFn ? function () {
       box.hidden = true;
@@ -988,10 +1019,22 @@
     toastTimer = setTimeout(function () { box.hidden = true; }, undoFn ? 6000 : 2600);
   }
 
+  /* A short buzz confirms a tap without looking, which is the whole point at
+     3 a.m. with the screen dimmed. Switchable from the menu, since a phone
+     resting on a bassinet mattress buzzes louder than one in a hand. */
+  var haptics = localStorage.getItem(HAPTIC_KEY) !== "off";
+
+  function buzz(ms) {
+    if (!haptics || !navigator.vibrate) return;
+    try { navigator.vibrate(ms); } catch (err) { /* refused; nothing is lost */ }
+  }
+
   /* ---------------- timer maths ---------------- */
 
+  /* Paused banks the current stretch and stops the clock, so a burp break or a
+     diaper change mid-feed doesn't get counted as time on the breast. */
   function segSeconds() {
-    if (!active) return 0;
+    if (!active || active.paused) return 0;
     return Math.max(0, Math.floor((Date.now() - active.segStart) / 1000));
   }
 
@@ -1016,28 +1059,57 @@
     } else {
       $("idleView").hidden = false;
       $("runningView").hidden = true;
+
+      /* Two clocks, because both get asked about: feeds are counted start to
+         start, and how long the baby has been off the breast is the other half. */
       var last = feeds[0];
       $("sinceText").innerHTML = last
-        ? "Last fed <b>" + agoText(last.start) + "</b> &middot; " + lastSideText(last)
+        ? "Last feed started <b>" + agoText(last.start) + "</b>"
         : "No feedings recorded yet";
+      $("sinceEnd").hidden = !last;
+      if (last) {
+        $("sinceEnd").innerHTML = "Finished <b>" + agoText(feedEnd(last)) + "</b>" + lastSideText(last);
+      }
+      markSuggestedSide(last ? pickUpSide(last) : null);
     }
   }
 
-  /* On the idle card, the side she finished on is the useful one — it says
-     where to pick up next. */
+  /* The side she finished on is where the next feed picks up, so the idle card
+     points at it: the button carries the hint and the accent. */
+  function pickUpSide(e) {
+    if (e.endSide === "L" || e.endSide === "R") return e.endSide;
+    var side = feedSide(e);
+    return side === "B" ? null : side;
+  }
+
   function lastSideText(e) {
-    if (e.endSide) return "ended on " + SIDE_NAME[e.endSide].toLowerCase();
-    return SIDE_NAME[feedSide(e)];
+    var side = pickUpSide(e);
+    return side ? " on the " + SIDE_NAME[side].toLowerCase() : "";
+  }
+
+  function markSuggestedSide(side) {
+    var btns = document.querySelectorAll("[data-start]");
+    for (var i = 0; i < btns.length; i++) {
+      var mine = btns[i].getAttribute("data-start") === side;
+      btns[i].classList.toggle("sel", mine);
+      var sub = btns[i].querySelector("small");
+      if (sub) sub.textContent = mine ? "pick up here" : "start here";
+    }
   }
 
   function tick() {
     if (!active) return;
     var l = liveLeft(), r = liveRight();
     $("elapsed").textContent = stopwatch(l + r);
+    $("elapsed").classList.toggle("paused", !!active.paused);
     $("leftVal").textContent = stopwatch(l);
     $("rightVal").textContent = stopwatch(r);
-    $("leftDot").textContent = active.side === "L" ? "● feeding" : "";
-    $("rightDot").textContent = active.side === "R" ? "● feeding" : "";
+    $("leftDot").textContent = active.side === "L" ? (active.paused ? "paused" : "● feeding") : "";
+    $("rightDot").textContent = active.side === "R" ? (active.paused ? "paused" : "● feeding") : "";
+    $("pauseBtn").textContent = active.paused ? "Resume" : "Pause";
+    $("runPrompt").textContent = active.paused
+      ? "Paused — Resume, or tap a side to pick up there"
+      : "Tap the other side to switch";
     var tiles = document.querySelectorAll("[data-switch]");
     for (var i = 0; i < tiles.length; i++) {
       tiles[i].classList.toggle("active", tiles[i].getAttribute("data-switch") === active.side);
@@ -1274,10 +1346,12 @@
         side: btn.getAttribute("data-start"),
         leftSec: 0,
         rightSec: 0,
-        segStart: now
+        segStart: now,
+        paused: false
       });
       renderAll();
       wakeScreen();
+      buzz(20);
     });
   });
 
@@ -1285,19 +1359,41 @@
     tile.addEventListener("click", function () {
       if (!active) return;
       var next = tile.getAttribute("data-switch");
-      if (next === active.side) return;
+      /* While paused, either tile picks the feed back up — the same one because
+         that is where she left off, the other because she moved her. */
+      if (next === active.side && !active.paused) return;
 
       var elapsed = segSeconds();
-      var updated = {
+      setActive({
         start: active.start,
         side: next,
         leftSec: active.leftSec + (active.side === "L" ? elapsed : 0),
         rightSec: active.rightSec + (active.side === "R" ? elapsed : 0),
-        segStart: Date.now()
-      };
-      setActive(updated);
+        segStart: Date.now(),
+        paused: false
+      });
       tick();
+      wakeScreen();
+      buzz(20);
     });
+  });
+
+  /* Pausing banks whatever the current side has run up, so the break itself is
+     never on the clock however long it lasts. */
+  $("pauseBtn").addEventListener("click", function () {
+    if (!active) return;
+    var elapsed = segSeconds();
+    setActive({
+      start: active.start,
+      side: active.side,
+      leftSec: active.leftSec + (active.side === "L" ? elapsed : 0),
+      rightSec: active.rightSec + (active.side === "R" ? elapsed : 0),
+      segStart: Date.now(),
+      paused: !active.paused
+    });
+    tick();
+    wakeScreen();
+    buzz(15);
   });
 
   $("stopBtn").addEventListener("click", function () {
@@ -1306,6 +1402,7 @@
     var entry = {
       id: newId(),
       start: active.start,
+      end: Date.now(),
       leftSec: liveLeft(),
       rightSec: liveRight(),
       endSide: active.side,
@@ -1319,7 +1416,27 @@
     setActive(null);
     renderAll();
     wakeScreen();
-    toast("Saved " + durationText(feedMinutes(entry)) + " · " + SIDE_NAME[feedSide(entry)]);
+    buzz(40);
+
+    /* Stop is the one tap that ends something, and it sits under a thumb for the
+       whole feed. Resume puts the timer back exactly as it was, banked seconds
+       and all, so a mis-tap costs nothing. */
+    toast("Saved " + durationText(feedMinutes(entry)) + " · " + SIDE_NAME[feedSide(entry)], function () {
+      if (active) { toast("A feeding is already running"); return; }
+      saveFeeds(feeds.filter(function (e) { return e.id !== entry.id; }));
+      setActive({
+        start: entry.start,
+        side: entry.endSide,
+        leftSec: entry.leftSec,
+        rightSec: entry.rightSec,
+        segStart: Date.now(),
+        paused: false
+      });
+      renderAll();
+      wakeScreen();
+      buzz(20);
+      toast("Back to feeding");
+    }, "Resume");
   });
 
   $("cancelBtn").addEventListener("click", function () {
@@ -1364,6 +1481,7 @@
   var editorSide = "L";
   var editorEnd = "R";
   var feedBaseMs = 0, feedBaseKey = "";
+  var editingFeedEnd = 0;   /* the record's stored finish time, kept across an edit */
 
   function applySideLayout() {
     var single = editorSide !== "B";
@@ -1391,6 +1509,7 @@
     editingFeedId = e ? e.id : null;
     editorSide = e ? feedSide(e) : "L";
     editorEnd = (e && e.endSide) || "R";
+    editingFeedEnd = e ? feedEnd(e) : 0;
 
     $("editorTitle").textContent = !e ? "Add a feeding"
       : locked ? "Feeding · " + SIDE_NAME[feedSide(e)]
@@ -1489,6 +1608,7 @@
     var record = normalizeFeed({
       id: editingFeedId || newId(),
       start: start,
+      end: editingFeedEnd,
       leftSec: leftMin * 60,
       rightSec: rightMin * 60,
       endSide: editorSide === "B" ? editorEnd : editorSide,
@@ -2588,6 +2708,21 @@
     );
   });
 
+  function renderHaptics() {
+    $("hapticsLine").textContent = haptics
+      ? "On — a short buzz when a feeding starts, switches or stops"
+      : "Off — no buzz";
+  }
+
+  $("hapticsBtn").addEventListener("click", function () {
+    haptics = !haptics;
+    localStorage.setItem(HAPTIC_KEY, haptics ? "on" : "off");
+    renderHaptics();
+    buzz(20);
+  });
+
+  renderHaptics();
+
   /* ---------------- screen wake and dimming ---------------- */
 
   /* Test hook: the suite shortens this so it needn't wait half a minute. */
@@ -2619,7 +2754,7 @@
 
   function paintVeil() {
     $("veilTime").textContent = stopwatch(liveLeft() + liveRight());
-    $("veilSide").textContent = SIDE_NAME[active.side] + " side";
+    $("veilSide").textContent = SIDE_NAME[active.side] + " side" + (active.paused ? " · paused" : "");
   }
 
   /* Called on any touch, and whenever the timer starts or stops. */

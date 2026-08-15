@@ -47,6 +47,10 @@ Then turn on Pages:
 - **Switch sides** — tap the other tile. Each side keeps its own running total, and the big
   number on top is the combined time. Time already banked on a side stops counting the moment
   she switches away from it.
+- **Pause** — for a burp, a nappy change, or a baby who has dozed off. The clock stops where it
+  is, so the break never counts as time on the breast, however long it lasts — a paused feed
+  stays paused through closing the app or restarting the phone. Tap **Resume** to carry on where
+  she left off, or tap either side to pick up on that one.
 - **The screen stays on** while a feed is timing, so you never have to unlock the phone to see
   the clock. After half a minute untouched it goes black except for the time and the side, dim
   enough for a dark room. Tap anywhere to bring the app back — that first tap only wakes the
@@ -54,6 +58,9 @@ Then turn on Pages:
 - **Done** — tap **Stop & Save**. The feeding is saved with the start time, the minutes on each
   side, a Left / Right / Both label worked out from those, and **which side it ended on** —
   whichever tile was running when she stopped.
+- **Stopped it by mistake?** The message that appears afterwards offers **Resume** for a few
+  seconds. Tapping it takes the record back out and puts the timer back exactly where it was,
+  with the minutes on each side still on it.
 - **Look at one** — tap any feeding in the list to read it back on the same card it was entered
   on: the side, the start time, the minutes on each side, which side it ended on, and the notes.
   Nothing on that card responds to a tap, so checking a feeding can't change it.
@@ -63,6 +70,8 @@ Then turn on Pages:
   boxes for left and right minutes plus an **Ended on** choice; picking one side gives a single
   box, since the ending side is then obvious.
 - **Forgot to hit start?** Tap **+ Add a past feeding**.
+- **Buzz** — the phone gives a short buzz when a feeding starts, switches sides, pauses or stops,
+  so a tap in the dark is confirmed without looking. Turn it off under **Vibration** in the menu.
 
 ### Diapers
 
@@ -77,9 +86,11 @@ Then turn on Pages:
 
 ### The timeline
 
-The two cards at the top always show **how long since the last feeding** (and which side it
-ended on, so it's clear where to pick up next) and **how long since the last diaper** — usually
-the thing you want at 3 a.m.
+The feeding card at the top always shows two things: **how long ago the last feed started** —
+feeds are usually counted start to start — and **how long ago it finished**, which is the other
+half of the question at 3 a.m. The finished line also says which side it ended on, and the
+button for that side is highlighted and reads **pick up here**, since that's where the next feed
+starts. Below it, the diaper and medicine cards show **how long since the last one**.
 
 Below them, feedings, diapers and medicines share one timeline, newest first, with per-day
 totals. The **All / Feeds / Diapers / Meds** buttons narrow it to one kind when you want to read just that — the
@@ -149,6 +160,7 @@ Tap the **⚙** button in the top-right (next to the **?**) for:
   the shared copy is named `…json.txt`; that's the same file, and Restore reads it back fine.
 - **Restore from backup** — reads that file back in. It skips records already in the log, so
   restoring twice won't create duplicates.
+- **Vibration** — on or off. Tap the line to switch it.
 - **What's new** — the version running on this phone, and what changed in each one before it.
   Worth a look after an update: if the version at the top isn't the newest, the phone is still
   on the old copy — close the app fully and open it again.

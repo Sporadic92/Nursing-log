@@ -141,7 +141,12 @@ check('one entry', (await page.$$('.entry')).length === 1);
 check('pill says B', await page.textContent('.entry .pill') === 'B');
 check('split shown', (await page.textContent('#history')).includes('Left 1 min · Right 1 min'));
 check('row shows ending side', (await page.textContent('#history')).includes('· ended right'));
-check('last-fed line shows ending side', (await page.textContent('#sinceText')).includes('ended on right'));
+check('last-fed line counts from the start', (await page.textContent('#sinceText')).includes('Last feed started'));
+check('finished line shows the ending side', (await page.textContent('#sinceEnd')).includes('on the right'));
+check('finished line counts from the end', (await page.textContent('#sinceEnd')).includes('Finished'));
+check('right start button suggested', (await page.getAttribute('[data-start="R"]', 'class')).includes('sel'));
+check('right start button says pick up', (await page.textContent('[data-start="R"]')).includes('pick up here'));
+check('left start button not suggested', !(await page.getAttribute('[data-start="L"]', 'class')).includes('sel'));
 
 // ---------- reading a record: the editor card, locked ----------
 await (await page.$$('.entry'))[0].click();
@@ -193,7 +198,9 @@ await page.click('[data-end="L"]');           // she actually finished on the le
 await page.fill('#fNotes', 'Switched sides, "good" latch');
 await page.click('#editorSave');
 check('edited ending side saved', (await page.textContent('#history')).includes('· ended left'));
-check('last-fed reflects edit', (await page.textContent('#sinceText')).includes('ended on left'));
+check('finished line reflects edit', (await page.textContent('#sinceEnd')).includes('on the left'));
+check('suggestion follows the edit', (await page.getAttribute('[data-start="L"]', 'class')).includes('sel'));
+check('old suggestion cleared', !(await page.getAttribute('[data-start="R"]', 'class')).includes('sel'));
 check('edited split saved', (await page.textContent('#history')).includes('Left 14 min · Right 6 min'));
 check('total is sum', (await page.textContent('#history')).includes('20 min'));
 check('notes shown', (await page.textContent('#history')).includes('Switched sides'));
@@ -214,7 +221,7 @@ await page.fill('#fDur', '9');
 await page.click('#editorSave');
 check('right-only saved', (await page.textContent('#history')).includes('Right only'));
 check('one-sided feed needs no ended tag', !(await page.textContent('#history')).includes('· ended'));
-check('one-sided last-fed says the side', (await page.textContent('#sinceText')).includes('ended on right'));
+check('one-sided finished line says the side', (await page.textContent('#sinceEnd')).includes('on the right'));
 check('right-only pill', await page.textContent('.entry .pill') === 'R');
 check('right-only duration', (await page.textContent('#history')).includes('9 min'));
 
@@ -916,6 +923,124 @@ check('cancelled share is not recorded as a backup',
 check('cancelled share does not fall back to a download', abortDownloads === 0);
 await abortCtx.close();
 
+// ---------- pausing, and taking a stop back ----------
+/* Vibration is a read-only accessor in Chromium, same as the wake lock. It goes
+   in as an init script too, so it survives this section's reloads. */
+const vibeStub = () => {
+  window.__vibes = [];
+  Object.defineProperty(navigator, 'vibrate', {
+    configurable: true,
+    value: ms => { window.__vibes.push(ms); return true; },
+  });
+};
+await ctx.addInitScript(vibeStub);
+await page.evaluate(vibeStub);
+
+const feedsNow = async () => (await page.$$('.entry')).length;
+const before = await feedsNow();
+
+await page.click('[data-start="L"]');
+await page.waitForTimeout(2200);
+check('pause offered while feeding', await page.isVisible('#pauseBtn'));
+await page.click('#pauseBtn');
+const heldTotal = await page.textContent('#elapsed');
+const heldLeft = await page.textContent('#leftVal');
+check('pause becomes Resume', await page.textContent('#pauseBtn') === 'Resume');
+check('paused is spelled out', (await page.textContent('#runPrompt')).includes('Paused'));
+check('the tile says paused, not feeding', (await page.textContent('#leftDot')) === 'paused');
+check('paused clock is dimmed', (await page.getAttribute('#elapsed', 'class')).includes('paused'));
+
+await page.waitForTimeout(2400);
+check('total stops while paused (' + heldTotal + ')', await page.textContent('#elapsed') === heldTotal);
+check('the side stops too', await page.textContent('#leftVal') === heldLeft);
+
+// a pause has to survive a reload, or a phone restart mid-break loses the break
+await page.reload({ waitUntil: 'networkidle' });
+check('still paused after reload', await page.textContent('#pauseBtn') === 'Resume');
+check('paused total survives reload', await page.textContent('#elapsed') === heldTotal);
+await page.waitForTimeout(1400);
+check('and is still frozen', await page.textContent('#elapsed') === heldTotal);
+
+await page.click('#pauseBtn');
+check('resume flips the button back', await page.textContent('#pauseBtn') === 'Pause');
+check('the tile is feeding again', (await page.textContent('#leftDot')).includes('feeding'));
+await page.waitForTimeout(2200);
+check('the clock runs again', await page.textContent('#elapsed') !== heldTotal);
+/* ~4.4s on the breast across a ~4s break: the break must not be in the total. */
+check('the break is not on the clock (' + await page.textContent('#elapsed') + ')',
+  toSec(await page.textContent('#elapsed')) < 8);
+
+// while paused, either tile picks the feed back up
+await page.click('#pauseBtn');
+await page.click('[data-switch="R"]');
+check('a side tap resumes', await page.textContent('#pauseBtn') === 'Pause');
+check('and picks up on that side', (await page.getAttribute('[data-switch="R"]', 'class')).includes('active'));
+await page.waitForTimeout(1200);
+
+// stopping by accident is recoverable
+const runningTotal = await page.textContent('#elapsed');
+await page.click('#stopBtn');
+check('stop saves the feed', await feedsNow() === before + 1);
+check('the saved toast offers Resume', await page.isVisible('#toastAction')
+  && await page.textContent('#toastAction') === 'Resume');
+await page.click('#toastAction');
+check('resume puts the timer back', await page.isVisible('#runningView'));
+check('and takes the record back out', await feedsNow() === before);
+check('with the banked time still on it',
+  toSec(await page.textContent('#elapsed')) >= toSec(runningTotal));
+check('on the side it ended on', (await page.getAttribute('[data-switch="R"]', 'class')).includes('active'));
+
+// but it must never overwrite a feed already under way
+await page.click('#stopBtn');
+await page.click('[data-start="L"]');
+await page.click('#toastAction');
+check('resume refuses over a running feed', (await page.textContent('#toastText')).includes('already running'));
+check('the new feed is untouched', await page.isVisible('#runningView'));
+check('and the saved one is still saved', await feedsNow() === before + 1);
+page.once('dialog', d => d.accept());
+await page.click('#cancelBtn');
+
+// ---------- vibration ----------
+await page.evaluate(() => { window.__vibes = []; });
+const vibes = () => page.evaluate(() => window.__vibes.length);
+await page.click('[data-start="L"]');
+check('starting a feed buzzes', await vibes() === 1);
+await page.click('[data-switch="R"]');
+check('switching sides buzzes', await vibes() === 2);
+await page.click('#pauseBtn');
+check('pausing buzzes', await vibes() === 3);
+await page.click('#pauseBtn');
+check('resuming buzzes', await vibes() === 4);
+await page.click('#stopBtn');
+check('stopping buzzes', await vibes() === 5);
+
+await page.click('#menuBtn');
+check('the menu offers vibration', (await page.textContent('#hapticsLine')).includes('On'));
+await page.click('#hapticsBtn');
+check('it can be turned off', (await page.textContent('#hapticsLine')).includes('Off'));
+await page.click('#menuClose');
+await page.evaluate(() => { window.__vibes = []; });
+await page.click('[data-start="L"]');
+check('no buzz once it is off', await vibes() === 0);
+page.once('dialog', d => d.accept());
+await page.click('#cancelBtn');
+
+await page.reload({ waitUntil: 'networkidle' });
+await page.click('#menuBtn');
+check('the choice is remembered', (await page.textContent('#hapticsLine')).includes('Off'));
+await page.click('#hapticsBtn');
+check('and can be turned back on', (await page.textContent('#hapticsLine')).includes('On'));
+await page.click('#menuClose');
+
+// leave the log as this section found it, idle and one reload old
+for (let i = 0; i < 4 && await feedsNow() > before; i++) {
+  await openRow(0);
+  await page.click('#editorDelete');
+}
+check('section cleaned up after itself', await feedsNow() === before);
+await page.reload({ waitUntil: 'networkidle' });
+check('idle again', await page.isVisible('#idleView'));
+
 // ---------- screen wake and dimming ----------
 const wake = () => page.evaluate(() => window.__wake);
 check('no wake lock while idle', !(await wake()).held);
@@ -992,6 +1117,8 @@ await page.waitForTimeout(1200);
 await page.click('[data-switch="R"]');
 await page.waitForTimeout(1200);
 await page.screenshot({ path: `${SHOTS}/running.png` });
+await page.click('#pauseBtn');
+await page.screenshot({ path: `${SHOTS}/paused.png` });
 page.once('dialog', d => d.accept());
 await page.click('#cancelBtn');
 
