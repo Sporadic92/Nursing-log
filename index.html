@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Nursing Log</title>
-<meta name="description" content="A simple, private breastfeeding tracker.">
+<meta name="description" content="A simple, private breastfeeding and diaper tracker.">
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#8d5b74">
 <link rel="apple-touch-icon" href="icons/icon-192.png">
@@ -21,6 +21,8 @@
     --left: #4f7cac;
     --right: #b2705a;
     --both: #6f8f6a;
+    --pee: #c99a2e;
+    --poop: #8a6a4f;
     --danger: #b3261e;
     --radius: 18px;
     --safe-bottom: env(safe-area-inset-bottom, 0px);
@@ -38,11 +40,16 @@
       --left: #8fb4dd;
       --right: #e2a48e;
       --both: #a3c69c;
+      --pee: #e8c56a;
+      --poop: #c0a184;
       --danger: #f2b8b5;
     }
   }
 
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  /* Layout classes below set `display`, which would otherwise beat the browser's
+     own [hidden] rule and leave hidden panels on screen. */
+  [hidden] { display: none !important; }
   html, body { margin: 0; padding: 0; }
   body {
     background: var(--bg);
@@ -50,7 +57,7 @@
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, system-ui, sans-serif;
     font-size: 16px;
     line-height: 1.4;
-    padding-bottom: calc(24px + var(--safe-bottom));
+    padding-bottom: calc(28px + var(--safe-bottom));
     overscroll-behavior-y: contain;
   }
   .wrap { max-width: 560px; margin: 0 auto; padding: 0 16px; }
@@ -72,51 +79,71 @@
     border-radius: var(--radius); padding: 18px; margin-bottom: 14px;
   }
 
-  /* ---------- timer card ---------- */
   .since { text-align: center; color: var(--muted); font-size: 15px; }
   .since b { color: var(--text); font-weight: 600; }
   .elapsed {
-    text-align: center; font-size: 54px; font-weight: 300; letter-spacing: -0.02em;
-    font-variant-numeric: tabular-nums; margin: 6px 0 2px;
+    text-align: center; font-size: 52px; font-weight: 300; letter-spacing: -0.02em;
+    font-variant-numeric: tabular-nums; margin: 4px 0 2px;
   }
-  .running-side { text-align: center; color: var(--muted); font-size: 15px; margin-bottom: 14px; }
   .prompt { text-align: center; color: var(--muted); font-size: 14px; margin: 14px 0 10px; }
 
-  .side-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
+  .row-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .row-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
+
   .side-btn {
     border: 1px solid var(--line); background: var(--surface-2); color: var(--text);
     border-radius: 14px; padding: 16px 6px; font-size: 17px; font-weight: 600;
-    cursor: pointer; display: grid; gap: 4px; place-items: center;
+    cursor: pointer; display: grid; gap: 3px; place-items: center; font-family: inherit;
   }
   .side-btn small { font-weight: 400; font-size: 12px; color: var(--muted); }
   .side-btn:active { transform: scale(0.98); }
   .side-btn.sel { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
   .side-btn.sel small { color: var(--accent); }
 
+  /* live per-side tiles while feeding */
+  .side-tile {
+    border: 1px solid var(--line); background: var(--surface-2); color: var(--text);
+    border-radius: 14px; padding: 12px 8px; cursor: pointer; font-family: inherit;
+    display: grid; gap: 2px; place-items: center;
+  }
+  .side-tile .lbl { font-size: 13px; color: var(--muted); }
+  .side-tile .val { font-size: 24px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .side-tile.active {
+    background: var(--accent-soft); border-color: var(--accent);
+  }
+  .side-tile.active .lbl { color: var(--accent); }
+  .side-tile.active .val { color: var(--accent); }
+  .side-tile .dot { font-size: 11px; color: var(--accent); height: 14px; }
+
   .big-btn {
     width: 100%; border: none; border-radius: 14px; padding: 18px;
-    font-size: 18px; font-weight: 700; cursor: pointer;
+    font-size: 18px; font-weight: 700; cursor: pointer; font-family: inherit;
     background: var(--accent); color: #fff; margin-top: 12px;
   }
   @media (prefers-color-scheme: dark) { .big-btn { color: #2a1b23; } }
   .big-btn:active { filter: brightness(0.95); }
   .text-btn {
     width: 100%; background: none; border: none; color: var(--muted);
-    font-size: 15px; padding: 12px; margin-top: 4px; cursor: pointer;
+    font-size: 15px; padding: 12px; margin-top: 4px; cursor: pointer; font-family: inherit;
   }
 
-  /* ---------- stats ---------- */
+  .card-title {
+    font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em;
+    color: var(--muted); margin-bottom: 10px; text-align: center;
+  }
+
   .stats { display: grid; grid-template-columns: 1fr 1fr 1fr; text-align: center; }
   .stats div + div { border-left: 1px solid var(--line); }
   .stats .n { font-size: 22px; font-weight: 650; font-variant-numeric: tabular-nums; }
   .stats .l { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
 
-  /* ---------- history ---------- */
   h2.day {
     font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em;
     color: var(--muted); margin: 22px 0 8px; display: flex; justify-content: space-between;
+    gap: 10px; align-items: baseline;
   }
-  h2.day span { text-transform: none; letter-spacing: 0; font-weight: 400; }
+  h2.day span { text-transform: none; letter-spacing: 0; font-weight: 400; text-align: right; }
+
   .entry {
     display: flex; align-items: center; gap: 12px; width: 100%; text-align: left;
     background: var(--surface); border: 1px solid var(--line); border-radius: 14px;
@@ -129,18 +156,21 @@
     font-weight: 700; font-size: 15px; color: #fff;
   }
   @media (prefers-color-scheme: dark) { .pill { color: #1d1418; } }
-  .pill.L { background: var(--left); } .pill.R { background: var(--right); } .pill.B { background: var(--both); }
+  .pill.L { background: var(--left); }
+  .pill.R { background: var(--right); }
+  .pill.B { background: var(--both); }
+  .pill.pee { background: var(--pee); font-size: 18px; }
+  .pill.poop { background: var(--poop); font-size: 18px; }
+  .pill.both-d { background: var(--poop); font-size: 13px; }
   .entry .meta { flex: 1; min-width: 0; }
   .entry .time { font-weight: 600; }
   .entry .sub { font-size: 13px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .empty { text-align: center; color: var(--muted); padding: 30px 10px; font-size: 15px; }
 
-  /* ---------- sheet / modal ---------- */
   .scrim {
     position: fixed; inset: 0; background: rgba(0,0,0,0.45);
     display: flex; align-items: flex-end; justify-content: center; z-index: 50;
   }
-  .scrim[hidden] { display: none; }
   .sheet {
     background: var(--bg); width: 100%; max-width: 560px;
     border-radius: 22px 22px 0 0; padding: 20px 16px calc(20px + var(--safe-bottom));
@@ -148,12 +178,11 @@
   }
   .sheet h3 { margin: 0 0 16px; font-size: 18px; }
   label { display: block; font-size: 13px; color: var(--muted); margin: 14px 0 6px; }
-  input[type="date"], input[type="time"], input[type="number"], textarea, select {
+  input[type="date"], input[type="time"], input[type="number"], textarea {
     width: 100%; font: inherit; color: var(--text); background: var(--surface);
     border: 1px solid var(--line); border-radius: 12px; padding: 13px 12px;
   }
-  textarea { resize: vertical; min-height: 80px; }
-  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  textarea { resize: vertical; min-height: 76px; }
   .sheet-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 20px; }
   .btn {
     border-radius: 13px; padding: 15px; font-size: 16px; font-weight: 600;
@@ -176,10 +205,14 @@
   .toast {
     position: fixed; left: 50%; transform: translateX(-50%);
     bottom: calc(20px + var(--safe-bottom)); background: var(--text); color: var(--bg);
-    padding: 12px 18px; border-radius: 30px; font-size: 15px; z-index: 100;
-    box-shadow: 0 6px 20px rgba(0,0,0,0.25); max-width: 90vw; text-align: center;
+    padding: 12px 16px; border-radius: 30px; font-size: 15px; z-index: 100;
+    box-shadow: 0 6px 20px rgba(0,0,0,0.25); max-width: 92vw;
+    display: flex; align-items: center; gap: 14px;
   }
-  .toast[hidden] { display: none; }
+  .toast button {
+    background: none; border: none; color: var(--bg); font: inherit; font-weight: 700;
+    text-decoration: underline; cursor: pointer; padding: 0; flex: none;
+  }
 </style>
 </head>
 <body>
@@ -190,67 +223,91 @@
     <button class="icon-btn" id="menuBtn" aria-label="Menu">&#9881;</button>
   </header>
 
-  <!-- Timer -->
-  <section class="card" id="timerCard">
+  <!-- Feeding -->
+  <section class="card">
     <div id="idleView">
       <div class="since" id="sinceText">No feedings recorded yet</div>
       <div class="prompt">Start a feeding</div>
-      <div class="side-row">
-        <button class="side-btn" data-start="L">L<small>Left</small></button>
-        <button class="side-btn" data-start="R">R<small>Right</small></button>
-        <button class="side-btn" data-start="B">B<small>Both</small></button>
+      <div class="row-2">
+        <button class="side-btn" data-start="L">Left<small>start here</small></button>
+        <button class="side-btn" data-start="R">Right<small>start here</small></button>
       </div>
       <button class="text-btn" id="addManualBtn">+ Add a past feeding</button>
     </div>
 
     <div id="runningView" hidden>
-      <div class="since">Feeding since <b id="startedAt">—</b></div>
+      <div class="since">Feeding since <b id="startedAt">&mdash;</b></div>
       <div class="elapsed" id="elapsed">0:00</div>
-      <div class="running-side">Tap to change side</div>
-      <div class="side-row">
-        <button class="side-btn" data-switch="L">L<small>Left</small></button>
-        <button class="side-btn" data-switch="R">R<small>Right</small></button>
-        <button class="side-btn" data-switch="B">B<small>Both</small></button>
+      <div class="prompt" style="margin-top:0">Tap the other side to switch</div>
+      <div class="row-2">
+        <button class="side-tile" data-switch="L">
+          <div class="lbl">Left</div>
+          <div class="val" id="leftVal">0:00</div>
+          <div class="dot" id="leftDot"></div>
+        </button>
+        <button class="side-tile" data-switch="R">
+          <div class="lbl">Right</div>
+          <div class="val" id="rightVal">0:00</div>
+          <div class="dot" id="rightDot"></div>
+        </button>
       </div>
       <button class="big-btn" id="stopBtn">Stop &amp; Save</button>
       <button class="text-btn" id="cancelBtn">Cancel without saving</button>
     </div>
   </section>
 
+  <!-- Diapers -->
+  <section class="card">
+    <div class="since" id="diaperSince">No diapers recorded yet</div>
+    <div class="prompt">Log a diaper</div>
+    <div class="row-3">
+      <button class="side-btn" data-diaper="pee">&#128167;<small>Pee</small></button>
+      <button class="side-btn" data-diaper="poop">&#128169;<small>Poop</small></button>
+      <button class="side-btn" data-diaper="both">&#128167;&#128169;<small>Both</small></button>
+    </div>
+    <button class="text-btn" id="addDiaperBtn">+ Add a past diaper</button>
+  </section>
+
   <!-- Today -->
   <section class="card stats">
     <div><div class="n" id="statCount">0</div><div class="l">Feeds today</div></div>
     <div><div class="n" id="statMinutes">0</div><div class="l">Minutes</div></div>
-    <div><div class="n" id="statLast">—</div><div class="l">Last side</div></div>
+    <div><div class="n" id="statDiapers">0</div><div class="l">Diapers</div></div>
   </section>
 
-  <!-- History -->
   <div id="history"></div>
 
 </div>
 
-<!-- Entry editor -->
+<!-- Feeding editor -->
 <div class="scrim" id="editorScrim" hidden>
   <div class="sheet" role="dialog" aria-modal="true">
     <h3 id="editorTitle">Edit feeding</h3>
 
-    <label>Side</label>
-    <div class="side-row">
+    <label>Which side</label>
+    <div class="row-3">
       <button class="side-btn" data-pick="L">L<small>Left</small></button>
       <button class="side-btn" data-pick="R">R<small>Right</small></button>
       <button class="side-btn" data-pick="B">B<small>Both</small></button>
     </div>
 
-    <div class="two">
+    <div class="row-2">
       <div><label for="fDate">Date</label><input type="date" id="fDate"></div>
       <div><label for="fTime">Start time</label><input type="time" id="fTime"></div>
     </div>
 
-    <label for="fDuration">Duration (minutes)</label>
-    <input type="number" id="fDuration" min="0" max="600" inputmode="numeric" step="1">
+    <div id="durSingle">
+      <label for="fDur" id="durLabel">Minutes on this side</label>
+      <input type="number" id="fDur" min="0" max="600" inputmode="numeric" step="1">
+    </div>
+
+    <div id="durSplit" class="row-2" hidden>
+      <div><label for="fLeft">Minutes on left</label><input type="number" id="fLeft" min="0" max="600" inputmode="numeric" step="1"></div>
+      <div><label for="fRight">Minutes on right</label><input type="number" id="fRight" min="0" max="600" inputmode="numeric" step="1"></div>
+    </div>
 
     <label for="fNotes">Notes</label>
-    <textarea id="fNotes" placeholder="Fussy, spit up, fell asleep, vitamin D…"></textarea>
+    <textarea id="fNotes" placeholder="Fussy, spit up, fell asleep, vitamin D&hellip;"></textarea>
 
     <div class="sheet-actions">
       <button class="btn" id="editorCancel">Cancel</button>
@@ -260,13 +317,40 @@
   </div>
 </div>
 
+<!-- Diaper editor -->
+<div class="scrim" id="diaperScrim" hidden>
+  <div class="sheet" role="dialog" aria-modal="true">
+    <h3 id="diaperTitle">Edit diaper</h3>
+
+    <label>What was in it</label>
+    <div class="row-2">
+      <button class="side-btn" data-toggle="pee">&#128167;<small>Pee</small></button>
+      <button class="side-btn" data-toggle="poop">&#128169;<small>Poop</small></button>
+    </div>
+
+    <div class="row-2">
+      <div><label for="dDate">Date</label><input type="date" id="dDate"></div>
+      <div><label for="dTime">Time</label><input type="time" id="dTime"></div>
+    </div>
+
+    <label for="dNotes">Notes</label>
+    <textarea id="dNotes" placeholder="Color, rash, leaked&hellip;"></textarea>
+
+    <div class="sheet-actions">
+      <button class="btn" id="diaperCancel">Cancel</button>
+      <button class="btn primary" id="diaperSave">Save</button>
+      <button class="btn danger wide" id="diaperDelete" hidden>Delete this diaper</button>
+    </div>
+  </div>
+</div>
+
 <!-- Menu -->
 <div class="scrim" id="menuScrim" hidden>
   <div class="sheet" role="dialog" aria-modal="true">
     <h3>Data &amp; backup</h3>
-    <button class="menu-item" id="exportCsv">Export spreadsheet (CSV)<small>Open in Excel or Google Sheets</small></button>
+    <button class="menu-item" id="exportCsv">Export spreadsheet (CSV)<small>Feedings and diapers, for Excel or Google Sheets</small></button>
     <button class="menu-item" id="exportJson">Save backup file<small>Everything, so you can restore it later</small></button>
-    <button class="menu-item" id="importJson">Restore from backup<small>Adds feedings from a backup file</small></button>
+    <button class="menu-item" id="importJson">Restore from backup<small>Adds anything missing from a backup file</small></button>
     <button class="menu-item" id="aboutBtn">About this app<small>Where your data lives</small></button>
     <div class="sheet-actions">
       <button class="btn wide" id="menuClose">Close</button>
@@ -275,47 +359,139 @@
   </div>
 </div>
 
-<div class="toast" id="toast" hidden></div>
+<div class="toast" id="toast" hidden><span id="toastText"></span><button id="toastAction" hidden>Undo</button></div>
 
 <script>
 (function () {
   "use strict";
 
-  var STORE_KEY = "nursinglog.entries.v1";
+  var FEEDS_KEY = "nursinglog.entries.v1";
+  var DIAPERS_KEY = "nursinglog.diapers.v1";
   var ACTIVE_KEY = "nursinglog.active.v1";
   var SIDE_NAME = { L: "Left", R: "Right", B: "Both" };
 
   var $ = function (id) { return document.getElementById(id); };
 
+  /* ---------------- model ---------------- */
+
+  /* A feeding is { id, start, leftSec, rightSec, notes }.
+     Older versions stored { minutes, side }, so migrate those on the way in. */
+  function normalizeFeed(e) {
+    if (!e || typeof e.start !== "number") return null;
+
+    var leftSec, rightSec;
+    if (typeof e.leftSec === "number" || typeof e.rightSec === "number") {
+      leftSec = Math.max(0, e.leftSec || 0);
+      rightSec = Math.max(0, e.rightSec || 0);
+    } else {
+      var secs = Math.max(0, (typeof e.minutes === "number" ? e.minutes : 0) * 60);
+      if (e.side === "R") { leftSec = 0; rightSec = secs; }
+      else if (e.side === "B") { leftSec = Math.round(secs / 2); rightSec = secs - Math.round(secs / 2); }
+      else { leftSec = secs; rightSec = 0; }
+    }
+
+    return {
+      id: e.id || newId(),
+      start: e.start,
+      leftSec: leftSec,
+      rightSec: rightSec,
+      notes: typeof e.notes === "string" ? e.notes : ""
+    };
+  }
+
+  function normalizeDiaper(d) {
+    if (!d || typeof d.time !== "number") return null;
+    if (!d.pee && !d.poop) return null;
+    return {
+      id: d.id || newId(),
+      time: d.time,
+      pee: !!d.pee,
+      poop: !!d.poop,
+      notes: typeof d.notes === "string" ? d.notes : ""
+    };
+  }
+
+  function feedSide(e) {
+    if (e.leftSec > 0 && e.rightSec > 0) return "B";
+    if (e.rightSec > 0) return "R";
+    return "L";
+  }
+
+  function minutesOf(sec) {
+    if (sec <= 0) return 0;
+    return Math.max(1, Math.round(sec / 60));
+  }
+
+  /* Total is the sum of what each side displays, so the numbers always add up. */
+  function feedMinutes(e) {
+    if (e.leftSec > 0 && e.rightSec > 0) return minutesOf(e.leftSec) + minutesOf(e.rightSec);
+    return minutesOf(e.leftSec + e.rightSec);
+  }
+
+  function diaperLabel(d) {
+    if (d.pee && d.poop) return "Pee + poop";
+    return d.poop ? "Poop" : "Pee";
+  }
+
+  function newId() {
+    return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+  }
+
   /* ---------------- storage ---------------- */
 
-  function loadEntries() {
+  function readList(key, normalize) {
     try {
-      var raw = localStorage.getItem(STORE_KEY);
+      var raw = localStorage.getItem(key);
       var list = raw ? JSON.parse(raw) : [];
       if (!Array.isArray(list)) return [];
-      return list.filter(function (e) {
-        return e && typeof e.start === "number" && SIDE_NAME[e.side];
-      });
+      var out = [];
+      for (var i = 0; i < list.length; i++) {
+        var item = normalize(list[i]);
+        if (item) out.push(item);
+      }
+      return out;
     } catch (err) {
       return [];
     }
   }
 
-  function saveEntries(list) {
-    list.sort(function (a, b) { return b.start - a.start; });
+  function writeList(key, list) {
     try {
-      localStorage.setItem(STORE_KEY, JSON.stringify(list));
+      localStorage.setItem(key, JSON.stringify(list));
     } catch (err) {
       toast("Could not save — phone storage may be full");
     }
-    entries = list;
   }
 
+  function loadFeeds() { return readList(FEEDS_KEY, normalizeFeed); }
+  function loadDiapers() { return readList(DIAPERS_KEY, normalizeDiaper); }
+
+  function saveFeeds(list) {
+    list.sort(function (a, b) { return b.start - a.start; });
+    feeds = list;
+    writeList(FEEDS_KEY, list);
+  }
+
+  function saveDiapers(list) {
+    list.sort(function (a, b) { return b.time - a.time; });
+    diapers = list;
+    writeList(DIAPERS_KEY, list);
+  }
+
+  /* Active session: { start, side, leftSec, rightSec, segStart }.
+     leftSec/rightSec hold finished stretches; segStart is when the current side began. */
   function loadActive() {
     try {
       var a = JSON.parse(localStorage.getItem(ACTIVE_KEY) || "null");
-      if (a && typeof a.start === "number" && SIDE_NAME[a.side]) return a;
+      if (a && typeof a.start === "number" && SIDE_NAME[a.side]) {
+        return {
+          start: a.start,
+          side: a.side === "B" ? "L" : a.side,
+          leftSec: a.leftSec || 0,
+          rightSec: a.rightSec || 0,
+          segStart: typeof a.segStart === "number" ? a.segStart : a.start
+        };
+      }
     } catch (err) { /* ignore */ }
     return null;
   }
@@ -326,11 +502,8 @@
     else localStorage.removeItem(ACTIVE_KEY);
   }
 
-  function newId() {
-    return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
-  }
-
-  var entries = loadEntries();
+  var feeds = loadFeeds();
+  var diapers = loadDiapers();
   var active = loadActive();
 
   /* ---------------- formatting ---------------- */
@@ -368,100 +541,147 @@
   }
 
   function dayLabel(key) {
-    var today = dayKey(Date.now());
-    var yesterday = dayKey(Date.now() - 86400000);
-    if (key === today) return "Today";
-    if (key === yesterday) return "Yesterday";
+    if (key === dayKey(Date.now())) return "Today";
+    if (key === dayKey(Date.now() - 86400000)) return "Yesterday";
     var p = key.split("-");
-    var d = new Date(+p[0], +p[1] - 1, +p[2]);
-    return d.toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" });
+    return new Date(+p[0], +p[1] - 1, +p[2])
+      .toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" });
   }
 
   var toastTimer = null;
-  function toast(msg) {
-    var t = $("toast");
-    t.textContent = msg;
-    t.hidden = false;
+  function toast(msg, undoFn) {
+    var box = $("toast"), action = $("toastAction");
+    $("toastText").textContent = msg;
+    action.hidden = !undoFn;
+    action.onclick = undoFn ? function () {
+      box.hidden = true;
+      undoFn();
+    } : null;
+    box.hidden = false;
     clearTimeout(toastTimer);
-    toastTimer = setTimeout(function () { t.hidden = true; }, 2600);
+    toastTimer = setTimeout(function () { box.hidden = true; }, undoFn ? 5000 : 2600);
   }
+
+  /* ---------------- timer maths ---------------- */
+
+  function segSeconds() {
+    if (!active) return 0;
+    return Math.max(0, Math.floor((Date.now() - active.segStart) / 1000));
+  }
+
+  function liveLeft() { return active.leftSec + (active.side === "L" ? segSeconds() : 0); }
+  function liveRight() { return active.rightSec + (active.side === "R" ? segSeconds() : 0); }
 
   /* ---------------- rendering ---------------- */
 
-  function markSelected(container, attr, value) {
-    var btns = container.querySelectorAll("[" + attr + "]");
+  function markSelected(root, attr, value) {
+    var btns = root.querySelectorAll("[" + attr + "]");
     for (var i = 0; i < btns.length; i++) {
       btns[i].classList.toggle("sel", btns[i].getAttribute(attr) === value);
     }
   }
 
-  function renderTimer() {
-    var idle = $("idleView"), running = $("runningView");
+  function renderFeedCard() {
     if (active) {
-      idle.hidden = true;
-      running.hidden = false;
+      $("idleView").hidden = true;
+      $("runningView").hidden = false;
       $("startedAt").textContent = clockTime(active.start);
-      markSelected(running, "data-switch", active.side);
       tick();
     } else {
-      idle.hidden = false;
-      running.hidden = true;
-      var last = entries[0];
+      $("idleView").hidden = false;
+      $("runningView").hidden = true;
+      var last = feeds[0];
       $("sinceText").innerHTML = last
-        ? "Last fed <b>" + agoText(last.start) + "</b> &middot; " + SIDE_NAME[last.side]
+        ? "Last fed <b>" + agoText(last.start) + "</b> &middot; " + SIDE_NAME[feedSide(last)]
         : "No feedings recorded yet";
     }
   }
 
   function tick() {
     if (!active) return;
-    var secs = Math.max(0, Math.floor((Date.now() - active.start) / 1000));
-    $("elapsed").textContent = stopwatch(secs);
+    var l = liveLeft(), r = liveRight();
+    $("elapsed").textContent = stopwatch(l + r);
+    $("leftVal").textContent = stopwatch(l);
+    $("rightVal").textContent = stopwatch(r);
+    $("leftDot").textContent = active.side === "L" ? "● feeding" : "";
+    $("rightDot").textContent = active.side === "R" ? "● feeding" : "";
+    var tiles = document.querySelectorAll("[data-switch]");
+    for (var i = 0; i < tiles.length; i++) {
+      tiles[i].classList.toggle("active", tiles[i].getAttribute("data-switch") === active.side);
+    }
+  }
+
+  function renderDiaperCard() {
+    var last = diapers[0];
+    $("diaperSince").innerHTML = last
+      ? "Last diaper <b>" + agoText(last.time) + "</b> &middot; " + diaperLabel(last)
+      : "No diapers recorded yet";
   }
 
   function renderStats() {
     var today = dayKey(Date.now());
-    var count = 0, minutes = 0, lastSide = "—";
-    for (var i = 0; i < entries.length; i++) {
-      if (dayKey(entries[i].start) === today) {
-        count++;
-        minutes += entries[i].minutes;
-        if (lastSide === "—") lastSide = SIDE_NAME[entries[i].side];
-      }
-    }
+    var count = 0, minutes = 0, dcount = 0;
+
+    feeds.forEach(function (e) {
+      if (dayKey(e.start) === today) { count++; minutes += feedMinutes(e); }
+    });
+    diapers.forEach(function (d) {
+      if (dayKey(d.time) === today) dcount++;
+    });
+
     $("statCount").textContent = count;
     $("statMinutes").textContent = minutes;
-    $("statLast").textContent = lastSide;
+    $("statDiapers").textContent = dcount;
+  }
+
+  function feedSubText(e) {
+    if (e.leftSec > 0 && e.rightSec > 0) {
+      return "Left " + minutesOf(e.leftSec) + " min · Right " + minutesOf(e.rightSec) + " min";
+    }
+    return SIDE_NAME[feedSide(e)] + " only";
   }
 
   function renderHistory() {
     var host = $("history");
     host.textContent = "";
 
-    if (!entries.length) {
+    var items = [];
+    feeds.forEach(function (e) { items.push({ kind: "feed", at: e.start, data: e }); });
+    diapers.forEach(function (d) { items.push({ kind: "diaper", at: d.time, data: d }); });
+    items.sort(function (a, b) { return b.at - a.at; });
+
+    if (!items.length) {
       var p = document.createElement("div");
       p.className = "empty";
-      p.textContent = "Feedings you record will show up here.";
+      p.textContent = "Feedings and diapers you record will show up here.";
       host.appendChild(p);
       return;
     }
 
-    var currentDay = null, dayTotal = null;
+    var currentDay = null;
 
-    entries.forEach(function (e) {
-      var key = dayKey(e.start);
+    items.forEach(function (item) {
+      var key = dayKey(item.at);
+
       if (key !== currentDay) {
         currentDay = key;
-        var count = 0, mins = 0;
-        entries.forEach(function (x) {
-          if (dayKey(x.start) === key) { count++; mins += x.minutes; }
+
+        var fCount = 0, fMin = 0, dCount = 0;
+        items.forEach(function (x) {
+          if (dayKey(x.at) !== key) return;
+          if (x.kind === "feed") { fCount++; fMin += feedMinutes(x.data); }
+          else dCount++;
         });
+
         var h = document.createElement("h2");
         h.className = "day";
         var name = document.createElement("strong");
         name.textContent = dayLabel(key);
         var sum = document.createElement("span");
-        sum.textContent = count + (count === 1 ? " feed" : " feeds") + " · " + mins + " min";
+        var parts = [];
+        if (fCount) parts.push(fCount + (fCount === 1 ? " feed" : " feeds") + " · " + fMin + " min");
+        if (dCount) parts.push(dCount + (dCount === 1 ? " diaper" : " diapers"));
+        sum.textContent = parts.join(" · ");
         h.appendChild(name);
         h.appendChild(sum);
         host.appendChild(h);
@@ -472,29 +692,48 @@
       row.type = "button";
 
       var pill = document.createElement("div");
-      pill.className = "pill " + e.side;
-      pill.textContent = e.side;
-
       var meta = document.createElement("div");
       meta.className = "meta";
-      var time = document.createElement("div");
-      time.className = "time";
-      time.textContent = clockTime(e.start) + " · " + durationText(e.minutes);
-      var sub = document.createElement("div");
-      sub.className = "sub";
-      sub.textContent = e.notes ? e.notes : SIDE_NAME[e.side];
-      meta.appendChild(time);
-      meta.appendChild(sub);
+      var line1 = document.createElement("div");
+      line1.className = "time";
+      var line2 = document.createElement("div");
+      line2.className = "sub";
+
+      if (item.kind === "feed") {
+        var e = item.data;
+        pill.className = "pill " + feedSide(e);
+        pill.textContent = feedSide(e);
+        line1.textContent = clockTime(e.start) + " · " + durationText(feedMinutes(e));
+        line2.textContent = feedSubText(e);
+        row.addEventListener("click", function () { openFeedEditor(e.id); });
+      } else {
+        var d = item.data;
+        pill.className = "pill " + (d.pee && d.poop ? "both-d" : d.poop ? "poop" : "pee");
+        pill.textContent = d.pee && d.poop ? "💧💩" : d.poop ? "💩" : "💧";
+        line1.textContent = clockTime(d.time) + " · " + diaperLabel(d);
+        line2.textContent = "Diaper";
+        row.addEventListener("click", function () { openDiaperEditor(d.id); });
+      }
+
+      var notes = item.data.notes;
+      meta.appendChild(line1);
+      meta.appendChild(line2);
+      if (notes) {
+        var line3 = document.createElement("div");
+        line3.className = "sub";
+        line3.textContent = notes;
+        meta.appendChild(line3);
+      }
 
       row.appendChild(pill);
       row.appendChild(meta);
-      row.addEventListener("click", function () { openEditor(e.id); });
       host.appendChild(row);
     });
   }
 
   function renderAll() {
-    renderTimer();
+    renderFeedCard();
+    renderDiaperCard();
     renderStats();
     renderHistory();
   }
@@ -503,35 +742,55 @@
 
   document.querySelectorAll("[data-start]").forEach(function (btn) {
     btn.addEventListener("click", function () {
-      setActive({ start: Date.now(), side: btn.getAttribute("data-start") });
+      var now = Date.now();
+      setActive({
+        start: now,
+        side: btn.getAttribute("data-start"),
+        leftSec: 0,
+        rightSec: 0,
+        segStart: now
+      });
       renderAll();
     });
   });
 
-  document.querySelectorAll("[data-switch]").forEach(function (btn) {
-    btn.addEventListener("click", function () {
+  document.querySelectorAll("[data-switch]").forEach(function (tile) {
+    tile.addEventListener("click", function () {
       if (!active) return;
-      setActive({ start: active.start, side: btn.getAttribute("data-switch") });
-      markSelected($("runningView"), "data-switch", active.side);
+      var next = tile.getAttribute("data-switch");
+      if (next === active.side) return;
+
+      var elapsed = segSeconds();
+      var updated = {
+        start: active.start,
+        side: next,
+        leftSec: active.leftSec + (active.side === "L" ? elapsed : 0),
+        rightSec: active.rightSec + (active.side === "R" ? elapsed : 0),
+        segStart: Date.now()
+      };
+      setActive(updated);
+      tick();
     });
   });
 
   $("stopBtn").addEventListener("click", function () {
     if (!active) return;
-    var minutes = Math.max(1, Math.round((Date.now() - active.start) / 60000));
+
     var entry = {
       id: newId(),
       start: active.start,
-      minutes: minutes,
-      side: active.side,
+      leftSec: liveLeft(),
+      rightSec: liveRight(),
       notes: ""
     };
-    var list = entries.slice();
+    if (entry.leftSec + entry.rightSec < 1) { entry.leftSec = active.side === "L" ? 1 : 0; entry.rightSec = active.side === "R" ? 1 : 0; }
+
+    var list = feeds.slice();
     list.push(entry);
-    saveEntries(list);
+    saveFeeds(list);
     setActive(null);
     renderAll();
-    toast("Saved " + durationText(minutes) + " · " + SIDE_NAME[entry.side]);
+    toast("Saved " + durationText(feedMinutes(entry)) + " · " + SIDE_NAME[feedSide(entry)]);
   });
 
   $("cancelBtn").addEventListener("click", function () {
@@ -541,98 +800,202 @@
     }
   });
 
-  /* ---------------- editor ---------------- */
+  /* ---------------- feeding editor ---------------- */
 
-  var editingId = null;
+  var editingFeedId = null;
   var editorSide = "L";
 
-  function openEditor(id) {
+  function applySideLayout() {
+    var single = editorSide !== "B";
+    $("durSingle").hidden = !single;
+    $("durSplit").hidden = single;
+    $("durLabel").textContent = "Minutes on the " + (editorSide === "R" ? "right" : "left");
+    markSelected($("editorScrim"), "data-pick", editorSide);
+  }
+
+  function openFeedEditor(id) {
     var e = null;
-    for (var i = 0; i < entries.length; i++) {
-      if (entries[i].id === id) { e = entries[i]; break; }
+    for (var i = 0; i < feeds.length; i++) {
+      if (feeds[i].id === id) { e = feeds[i]; break; }
     }
 
-    editingId = e ? e.id : null;
-    editorSide = e ? e.side : "L";
+    editingFeedId = e ? e.id : null;
+    editorSide = e ? feedSide(e) : "L";
 
     var when = e ? new Date(e.start) : new Date();
     $("editorTitle").textContent = e ? "Edit feeding" : "Add a feeding";
     $("fDate").value = when.getFullYear() + "-" + pad(when.getMonth() + 1) + "-" + pad(when.getDate());
     $("fTime").value = pad(when.getHours()) + ":" + pad(when.getMinutes());
-    $("fDuration").value = e ? e.minutes : 15;
+    $("fLeft").value = e ? minutesOf(e.leftSec) : 0;
+    $("fRight").value = e ? minutesOf(e.rightSec) : 0;
+    $("fDur").value = e ? minutesOf(e.leftSec + e.rightSec) : 15;
     $("fNotes").value = e ? e.notes : "";
     $("editorDelete").hidden = !e;
 
-    markSelected($("editorScrim"), "data-pick", editorSide);
+    applySideLayout();
     $("editorScrim").hidden = false;
   }
 
-  function closeEditor() {
-    $("editorScrim").hidden = true;
-    editingId = null;
+  function num(id) {
+    var v = parseInt($(id).value, 10);
+    if (isNaN(v) || v < 0) v = 0;
+    return Math.min(v, 600);
   }
 
   document.querySelectorAll("[data-pick]").forEach(function (btn) {
     btn.addEventListener("click", function () {
-      editorSide = btn.getAttribute("data-pick");
-      markSelected($("editorScrim"), "data-pick", editorSide);
+      var next = btn.getAttribute("data-pick");
+      if (next === editorSide) return;
+
+      /* Carry the minutes across so switching sides never loses what was typed. */
+      if (next === "B") {
+        var single = num("fDur");
+        $("fLeft").value = editorSide === "L" ? single : 0;
+        $("fRight").value = editorSide === "R" ? single : 0;
+      } else if (editorSide === "B") {
+        $("fDur").value = num("fLeft") + num("fRight");
+      }
+
+      editorSide = next;
+      applySideLayout();
     });
   });
 
-  $("addManualBtn").addEventListener("click", function () { openEditor(null); });
-  $("editorCancel").addEventListener("click", closeEditor);
+  $("addManualBtn").addEventListener("click", function () { openFeedEditor(null); });
+  $("editorCancel").addEventListener("click", function () { $("editorScrim").hidden = true; });
+
+  function readDateTime(dateId, timeId) {
+    var dateVal = $(dateId).value, timeVal = $(timeId).value;
+    if (!dateVal || !timeVal) return null;
+    var dp = dateVal.split("-"), tp = timeVal.split(":");
+    var ms = new Date(+dp[0], +dp[1] - 1, +dp[2], +tp[0], +tp[1], 0, 0).getTime();
+    return isNaN(ms) ? null : ms;
+  }
 
   $("editorSave").addEventListener("click", function () {
-    var dateVal = $("fDate").value;
-    var timeVal = $("fTime").value;
-    if (!dateVal || !timeVal) { toast("Please set a date and time"); return; }
+    var start = readDateTime("fDate", "fTime");
+    if (start === null) { toast("Please set a date and time"); return; }
 
-    var dp = dateVal.split("-");
-    var tp = timeVal.split(":");
-    var start = new Date(+dp[0], +dp[1] - 1, +dp[2], +tp[0], +tp[1], 0, 0).getTime();
-    if (isNaN(start)) { toast("That date and time didn't look right"); return; }
+    var leftMin, rightMin;
+    if (editorSide === "B") { leftMin = num("fLeft"); rightMin = num("fRight"); }
+    else if (editorSide === "R") { leftMin = 0; rightMin = num("fDur"); }
+    else { leftMin = num("fDur"); rightMin = 0; }
 
-    var minutes = parseInt($("fDuration").value, 10);
-    if (isNaN(minutes) || minutes < 0) minutes = 0;
-    if (minutes > 600) minutes = 600;
-
-    var list = entries.slice();
-    var found = false;
-    for (var i = 0; i < list.length; i++) {
-      if (list[i].id === editingId) {
-        list[i] = {
-          id: list[i].id,
-          start: start,
-          minutes: minutes,
-          side: editorSide,
-          notes: $("fNotes").value.trim()
-        };
-        found = true;
-        break;
-      }
-    }
-    if (!found) {
-      list.push({
-        id: newId(),
-        start: start,
-        minutes: minutes,
-        side: editorSide,
-        notes: $("fNotes").value.trim()
-      });
+    if (editorSide === "B" && leftMin === 0 && rightMin === 0) {
+      toast("Add minutes for at least one side");
+      return;
     }
 
-    saveEntries(list);
-    closeEditor();
+    var record = {
+      id: editingFeedId || newId(),
+      start: start,
+      leftSec: leftMin * 60,
+      rightSec: rightMin * 60,
+      notes: $("fNotes").value.trim()
+    };
+
+    var list = feeds.filter(function (e) { return e.id !== editingFeedId; });
+    list.push(record);
+    saveFeeds(list);
+
+    $("editorScrim").hidden = true;
     renderAll();
     toast("Saved");
   });
 
   $("editorDelete").addEventListener("click", function () {
-    if (!editingId) return;
-    if (!confirm("Delete this feeding?")) return;
-    var id = editingId;
-    saveEntries(entries.filter(function (e) { return e.id !== id; }));
-    closeEditor();
+    if (!editingFeedId || !confirm("Delete this feeding?")) return;
+    var id = editingFeedId;
+    saveFeeds(feeds.filter(function (e) { return e.id !== id; }));
+    $("editorScrim").hidden = true;
+    renderAll();
+    toast("Deleted");
+  });
+
+  /* ---------------- diapers ---------------- */
+
+  var editingDiaperId = null;
+
+  document.querySelectorAll("[data-diaper]").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      var kind = btn.getAttribute("data-diaper");
+      var record = {
+        id: newId(),
+        time: Date.now(),
+        pee: kind === "pee" || kind === "both",
+        poop: kind === "poop" || kind === "both",
+        notes: ""
+      };
+      var list = diapers.slice();
+      list.push(record);
+      saveDiapers(list);
+      renderAll();
+      toast(diaperLabel(record) + " logged", function () {
+        saveDiapers(diapers.filter(function (d) { return d.id !== record.id; }));
+        renderAll();
+      });
+    });
+  });
+
+  function openDiaperEditor(id) {
+    var d = null;
+    for (var i = 0; i < diapers.length; i++) {
+      if (diapers[i].id === id) { d = diapers[i]; break; }
+    }
+
+    editingDiaperId = d ? d.id : null;
+    var when = d ? new Date(d.time) : new Date();
+
+    $("diaperTitle").textContent = d ? "Edit diaper" : "Add a diaper";
+    $("dDate").value = when.getFullYear() + "-" + pad(when.getMonth() + 1) + "-" + pad(when.getDate());
+    $("dTime").value = pad(when.getHours()) + ":" + pad(when.getMinutes());
+    $("dNotes").value = d ? d.notes : "";
+    $("diaperDelete").hidden = !d;
+
+    var scrim = $("diaperScrim");
+    scrim.querySelector('[data-toggle="pee"]').classList.toggle("sel", d ? d.pee : true);
+    scrim.querySelector('[data-toggle="poop"]').classList.toggle("sel", d ? d.poop : false);
+    scrim.hidden = false;
+  }
+
+  document.querySelectorAll("[data-toggle]").forEach(function (btn) {
+    btn.addEventListener("click", function () { btn.classList.toggle("sel"); });
+  });
+
+  $("addDiaperBtn").addEventListener("click", function () { openDiaperEditor(null); });
+  $("diaperCancel").addEventListener("click", function () { $("diaperScrim").hidden = true; });
+
+  $("diaperSave").addEventListener("click", function () {
+    var time = readDateTime("dDate", "dTime");
+    if (time === null) { toast("Please set a date and time"); return; }
+
+    var scrim = $("diaperScrim");
+    var pee = scrim.querySelector('[data-toggle="pee"]').classList.contains("sel");
+    var poop = scrim.querySelector('[data-toggle="poop"]').classList.contains("sel");
+    if (!pee && !poop) { toast("Pick pee, poop, or both"); return; }
+
+    var record = {
+      id: editingDiaperId || newId(),
+      time: time,
+      pee: pee,
+      poop: poop,
+      notes: $("dNotes").value.trim()
+    };
+
+    var list = diapers.filter(function (d) { return d.id !== editingDiaperId; });
+    list.push(record);
+    saveDiapers(list);
+
+    scrim.hidden = true;
+    renderAll();
+    toast("Saved");
+  });
+
+  $("diaperDelete").addEventListener("click", function () {
+    if (!editingDiaperId || !confirm("Delete this diaper?")) return;
+    var id = editingDiaperId;
+    saveDiapers(diapers.filter(function (d) { return d.id !== id; }));
+    $("diaperScrim").hidden = true;
     renderAll();
     toast("Deleted");
   });
@@ -642,7 +1005,7 @@
   $("menuBtn").addEventListener("click", function () { $("menuScrim").hidden = false; });
   $("menuClose").addEventListener("click", function () { $("menuScrim").hidden = true; });
 
-  [$("editorScrim"), $("menuScrim")].forEach(function (scrim) {
+  [$("editorScrim"), $("diaperScrim"), $("menuScrim")].forEach(function (scrim) {
     scrim.addEventListener("click", function (ev) {
       if (ev.target === scrim) scrim.hidden = true;
     });
@@ -666,30 +1029,48 @@
   }
 
   function csvCell(value) {
-    var s = String(value == null ? "" : value);
-    return '"' + s.replace(/"/g, '""') + '"';
+    return '"' + String(value == null ? "" : value).replace(/"/g, '""') + '"';
   }
 
   $("exportCsv").addEventListener("click", function () {
-    if (!entries.length) { toast("Nothing to export yet"); return; }
-    var rows = [["Date", "Start time", "Minutes", "Side", "Notes"]];
-    entries.slice().reverse().forEach(function (e) {
-      var d = new Date(e.start);
-      rows.push([
-        d.toLocaleDateString(),
-        d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }),
-        e.minutes,
-        SIDE_NAME[e.side],
-        e.notes
-      ]);
+    if (!feeds.length && !diapers.length) { toast("Nothing to export yet"); return; }
+
+    var rows = [["Date", "Time", "Type", "Side", "Left (min)", "Right (min)", "Total (min)", "Pee", "Poop", "Notes"]];
+
+    var items = [];
+    feeds.forEach(function (e) { items.push({ at: e.start, kind: "feed", data: e }); });
+    diapers.forEach(function (d) { items.push({ at: d.time, kind: "diaper", data: d }); });
+    items.sort(function (a, b) { return a.at - b.at; });
+
+    items.forEach(function (item) {
+      var when = new Date(item.at);
+      var date = when.toLocaleDateString();
+      var time = when.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+
+      if (item.kind === "feed") {
+        var e = item.data;
+        rows.push([date, time, "Feeding", SIDE_NAME[feedSide(e)],
+          minutesOf(e.leftSec), minutesOf(e.rightSec), feedMinutes(e), "", "", e.notes]);
+      } else {
+        var d = item.data;
+        rows.push([date, time, "Diaper", "", "", "", "",
+          d.pee ? "Yes" : "", d.poop ? "Yes" : "", d.notes]);
+      }
     });
-    var csv = rows.map(function (r) { return r.map(csvCell).join(","); }).join("\r\n");
-    download("nursing-log-" + stamp() + ".csv", csv, "text/csv");
+
+    download("nursing-log-" + stamp() + ".csv",
+      rows.map(function (r) { return r.map(csvCell).join(","); }).join("\r\n"), "text/csv");
     $("menuScrim").hidden = true;
   });
 
   $("exportJson").addEventListener("click", function () {
-    var payload = { app: "nursing-log", version: 1, exported: new Date().toISOString(), entries: entries };
+    var payload = {
+      app: "nursing-log",
+      version: 2,
+      exported: new Date().toISOString(),
+      entries: feeds,
+      diapers: diapers
+    };
     download("nursing-log-backup-" + stamp() + ".json", JSON.stringify(payload, null, 2), "application/json");
     $("menuScrim").hidden = true;
   });
@@ -703,40 +1084,58 @@
 
     var reader = new FileReader();
     reader.onload = function () {
-      var incoming;
+      var data;
       try {
-        var data = JSON.parse(reader.result);
-        incoming = Array.isArray(data) ? data : data.entries;
+        data = JSON.parse(reader.result);
       } catch (err) {
         toast("That file isn't a Nursing Log backup");
         return;
       }
-      if (!Array.isArray(incoming)) { toast("That file isn't a Nursing Log backup"); return; }
 
-      var seen = {};
-      entries.forEach(function (e) { seen[e.start + "|" + e.side + "|" + e.minutes] = true; });
+      var inFeeds = Array.isArray(data) ? data : data.entries;
+      var inDiapers = data.diapers;
+      if (!Array.isArray(inFeeds) && !Array.isArray(inDiapers)) {
+        toast("That file isn't a Nursing Log backup");
+        return;
+      }
 
-      var list = entries.slice();
       var added = 0;
-      incoming.forEach(function (e) {
-        if (!e || typeof e.start !== "number" || !SIDE_NAME[e.side]) return;
-        var key = e.start + "|" + e.side + "|" + e.minutes;
-        if (seen[key]) return;
-        seen[key] = true;
-        list.push({
-          id: e.id || newId(),
-          start: e.start,
-          minutes: typeof e.minutes === "number" ? e.minutes : 0,
-          side: e.side,
-          notes: typeof e.notes === "string" ? e.notes : ""
-        });
-        added++;
-      });
 
-      saveEntries(list);
+      if (Array.isArray(inFeeds)) {
+        var seenF = {};
+        feeds.forEach(function (e) { seenF[e.start + "|" + e.leftSec + "|" + e.rightSec] = true; });
+        var fList = feeds.slice();
+        inFeeds.forEach(function (raw) {
+          var e = normalizeFeed(raw);
+          if (!e) return;
+          var key = e.start + "|" + e.leftSec + "|" + e.rightSec;
+          if (seenF[key]) return;
+          seenF[key] = true;
+          fList.push(e);
+          added++;
+        });
+        saveFeeds(fList);
+      }
+
+      if (Array.isArray(inDiapers)) {
+        var seenD = {};
+        diapers.forEach(function (d) { seenD[d.time + "|" + d.pee + "|" + d.poop] = true; });
+        var dList = diapers.slice();
+        inDiapers.forEach(function (raw) {
+          var d = normalizeDiaper(raw);
+          if (!d) return;
+          var key = d.time + "|" + d.pee + "|" + d.poop;
+          if (seenD[key]) return;
+          seenD[key] = true;
+          dList.push(d);
+          added++;
+        });
+        saveDiapers(dList);
+      }
+
       renderAll();
       $("menuScrim").hidden = true;
-      toast(added ? "Restored " + added + " feedings" : "Nothing new to add");
+      toast(added ? "Restored " + added + " records" : "Nothing new to add");
     };
     reader.readAsText(file);
   });
@@ -755,12 +1154,13 @@
 
   setInterval(function () {
     if (active) tick();
-    else renderTimer();
+    else { renderFeedCard(); renderDiaperCard(); }
   }, 1000);
 
   document.addEventListener("visibilitychange", function () {
     if (!document.hidden) {
-      entries = loadEntries();
+      feeds = loadFeeds();
+      diapers = loadDiapers();
       active = loadActive();
       renderAll();
     }

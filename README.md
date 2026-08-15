@@ -1,9 +1,9 @@
 # Nursing Log
 
 A simple breastfeeding tracker that installs on an Android phone like a normal app.
-Records **when** a feeding started, **how long** it lasted, **which side** (left / right / both),
-and any **notes**. Everything is stored on the phone — no account, no internet needed after
-the first visit, nothing sent anywhere.
+Records **when** a feeding started, **how long she spent on each side**, and any **notes**,
+plus **diapers** (pee, poop, or both). Everything is stored on the phone — no account, no
+internet needed after the first visit, nothing sent anywhere.
 
 ## Put it on her phone (about 5 minutes)
 
@@ -40,14 +40,30 @@ Then turn on Pages:
 
 ## Using it
 
-- **Start a feeding** — tap **L**, **R**, or **B**. A timer starts and keeps running even if she
-  closes the app or locks the phone.
-- **Switched sides partway?** Tap a different letter while the timer runs.
-- **Done** — tap **Stop & Save**. It records the start time, the length, and the side.
-- **Add notes, or fix a time** — tap any feeding in the list below to edit it, or delete it.
-- **Forgot to hit start?** Tap **+ Add a past feeding** and type it in by hand.
-- The card at the top always shows **how long since the last feeding** and **which side was last**,
-  which is usually the thing you want at 3 a.m.
+### Feedings
+
+- **Start** — tap **Left** or **Right**. A timer starts and keeps running even if she closes the
+  app or locks the phone.
+- **Switch sides** — tap the other tile. Each side keeps its own running total, and the big
+  number on top is the combined time. Time already banked on a side stops counting the moment
+  she switches away from it.
+- **Done** — tap **Stop & Save**. The feeding is saved with the start time, the minutes on each
+  side, and a Left / Right / Both label worked out from those.
+- **Fix or annotate it** — tap any feeding in the list to change the side, time, per-side
+  minutes, or notes, or to delete it. Picking **Both** in the editor gives separate boxes for
+  left and right minutes; picking one side gives a single box.
+- **Forgot to hit start?** Tap **+ Add a past feeding**.
+
+### Diapers
+
+- Tap **Pee**, **Poop**, or **Both** to log one at the current time. A mis-tap can be undone
+  straight from the confirmation that appears.
+- Tap a diaper in the list to add notes, change the time, or delete it.
+- **+ Add a past diaper** for one that wasn't logged when it happened.
+
+The two cards at the top always show **how long since the last feeding** (and which side) and
+**how long since the last diaper** — usually the thing you want at 3 a.m. Feedings and diapers
+share one timeline below, newest first, with per-day totals.
 
 ## Backups (worth reading)
 
@@ -57,9 +73,10 @@ site, or by uninstalling.
 
 Tap the **⚙** button in the top-right for:
 
-- **Export spreadsheet (CSV)** — opens in Excel or Google Sheets, handy for the pediatrician.
+- **Export spreadsheet (CSV)** — feedings and diapers in one chronological sheet, with columns
+  for per-side minutes and pee/poop. Opens in Excel or Google Sheets, handy for the pediatrician.
 - **Save backup file** — a `.json` file with everything. Keep one in Google Drive now and then.
-- **Restore from backup** — reads that file back in. It skips feedings already in the log, so
+- **Restore from backup** — reads that file back in. It skips records already in the log, so
   restoring twice won't create duplicates.
 
 ## Making changes later
