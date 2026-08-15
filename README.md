@@ -58,15 +58,24 @@ Then turn on Pages:
 
 ### Diapers
 
-- Tap **Pee**, **Poop**, or **Both** to log one at the current time. A mis-tap can be undone
-  straight from the confirmation that appears.
-- Tap a diaper in the list to add notes, change the time, or delete it.
+- Tap **Pee**, **Poop**, or **Both**. That opens a short form, already filled in with what you
+  tapped and the current time — add a size and any notes, then **Save**. Nothing is recorded
+  until you save, so a mis-tap costs one **Cancel**.
+- **How big** (small / medium / large) only appears when there's a poop to describe, and tapping
+  the chosen size again clears it. It's optional either way.
+- Tap a diaper in the list to change any of it, or delete it.
 - **+ Add a past diaper** for one that wasn't logged when it happened.
 
+### The timeline
+
 The two cards at the top always show **how long since the last feeding** (and which side it
-ended on, so it's clear where to pick up next) and
-**how long since the last diaper** — usually the thing you want at 3 a.m. Feedings and diapers
-share one timeline below, newest first, with per-day totals.
+ended on, so it's clear where to pick up next) and **how long since the last diaper** — usually
+the thing you want at 3 a.m.
+
+Below them, feedings and diapers share one timeline, newest first, with per-day totals. The
+**All / Feeds / Diapers** buttons narrow it to one kind when you want to read just that — the
+day totals follow whichever view you pick, and the choice is remembered next time you open
+the app.
 
 ## Backups (worth reading)
 
@@ -77,7 +86,7 @@ site, or by uninstalling.
 Tap the **⚙** button in the top-right for:
 
 - **Export spreadsheet (CSV)** — feedings and diapers in one chronological sheet, with columns
-  for per-side minutes, ending side, and pee/poop. Opens in Excel or Google Sheets, handy for the pediatrician.
+  for per-side minutes, ending side, pee/poop, and poop size. Opens in Excel or Google Sheets, handy for the pediatrician.
 - **Save backup file** — a `.json` file with everything. Keep one in Google Drive now and then.
 - **Restore from backup** — reads that file back in. It skips records already in the log, so
   restoring twice won't create duplicates.
