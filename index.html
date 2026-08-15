@@ -76,6 +76,7 @@
   }
   .icon-btn:active { background: var(--surface-2); }
   .icon-btn { position: relative; }
+  .head-btns { display: flex; gap: 10px; flex: none; }
   .nudge {
     position: absolute; top: 2px; right: 2px; width: 11px; height: 11px;
     border-radius: 50%; background: var(--accent); border: 2px solid var(--bg);
@@ -247,6 +248,43 @@
   .vlog-entry ul { margin: 6px 0 0; padding-left: 18px; }
   .vlog-entry li { color: var(--muted); font-size: 14px; line-height: 1.45; margin: 4px 0; }
 
+  /* Newborn basics: every section folded shut, so the whole list of headings
+     fits one screen and the answer she wants is one tap in, not a scroll
+     through eight other answers. */
+  .guide-note { margin: -8px 0 6px; font-size: 13px; color: var(--muted); }
+  .guide details { border-bottom: 1px solid var(--line); }
+  .guide details:last-child { border-bottom: none; }
+  .guide summary {
+    list-style: none; cursor: pointer; padding: 16px 8px; font-size: 16px;
+    font-weight: 600; display: flex; align-items: center; gap: 10px;
+  }
+  .guide summary::-webkit-details-marker { display: none; }
+  .guide summary::after {
+    content: "+"; margin-left: auto; flex: none;
+    color: var(--muted); font-weight: 400; font-size: 20px; line-height: 1;
+  }
+  .guide details[open] summary { color: var(--accent); }
+  .guide details[open] summary::after { content: "\2013"; }
+  .guide details.urgent summary { color: var(--danger); }
+  .guide ul { margin: 0 0 14px; padding-left: 28px; }
+  .guide li { color: var(--muted); font-size: 14px; line-height: 1.5; margin: 7px 0; }
+
+  /* Diapers by age reads as a table because that is how it gets used:
+     find today's row, compare it with the day. */
+  /* No column gap: the row rules have to run unbroken across all three columns
+     or the table reads as three lists side by side. Spacing is padding instead. */
+  .gtable {
+    display: grid; grid-template-columns: auto 1fr 1.4fr;
+    margin: 2px 0 14px; padding: 0 8px; font-size: 14px;
+  }
+  .gtable div {
+    padding: 7px 14px 7px 0; border-bottom: 1px solid var(--line); color: var(--muted);
+  }
+  .gtable .gh {
+    font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; padding-top: 0;
+  }
+  .gtable .gd { color: var(--text); font-weight: 600; white-space: nowrap; }
+
   /* While a feed runs the screen is held awake, so it goes dark on its own
      instead — bright enough to read the clock, dim enough for a dark nursery. */
   .veil {
@@ -276,7 +314,10 @@
 
   <header>
     <h1>Nursing Log</h1>
-    <button class="icon-btn" id="menuBtn" aria-label="Menu">&#9881;<span class="nudge" id="backupDot" hidden></span></button>
+    <div class="head-btns">
+      <button class="icon-btn" id="guideBtn" aria-label="Newborn basics">?</button>
+      <button class="icon-btn" id="menuBtn" aria-label="Menu">&#9881;<span class="nudge" id="backupDot" hidden></span></button>
+    </div>
   </header>
 
   <!-- Feeding -->
@@ -505,6 +546,18 @@
   </div>
 </div>
 
+<!-- Newborn basics -->
+<div class="scrim" id="guideScrim" hidden>
+  <div class="sheet" role="dialog" aria-modal="true">
+    <h3>Newborn basics</h3>
+    <p class="guide-note" id="guideNote"></p>
+    <div class="guide" id="guide"></div>
+    <div class="sheet-actions">
+      <button class="btn wide" id="guideClose">Close</button>
+    </div>
+  </div>
+</div>
+
 <!-- Version log -->
 <div class="scrim" id="logScrim" hidden>
   <div class="sheet" role="dialog" aria-modal="true">
@@ -547,11 +600,117 @@
   var MED_DOSE_DEFAULT = "400 mg";
   var MED_OTHER = "__other__";
 
+  /* The reference behind the ? button: ordinary newborn guidance, the kind that
+     is easy to lose track of at 4 a.m. It is plain text and nothing reads her
+     log — this app does not do arithmetic on a baby. Edit a bullet by editing
+     the string; add a section by adding an object here. Deliberately no medicine
+     doses: what is safe to take is the pediatrician's to say, not this app's.
+     `days` renders as the wet/dirty table and is optional. */
+  var GUIDE_NOTE = "General newborn guidance, here to jog your memory — not medical advice. " +
+    "Whatever your midwife or pediatrician tells you wins.";
+
+  var GUIDE = [
+    { t: "How often to feed", notes: [
+      "Most newborns feed 8 to 12 times in 24 hours — roughly every 2 to 3 hours, counted from the start of one feed to the start of the next, not from the end.",
+      "In the first few weeks, don't let a stretch go past about 4 hours without waking the baby for a feed. Once weight is back up and the pediatrician is happy, a longer night stretch is fine.",
+      "Feed on cues rather than on the clock. The clock is a backstop for a sleepy baby, not a schedule.",
+      "10 to 20 minutes a side is typical, but let the baby finish the first side before offering the second — the richer milk comes later in the feed.",
+      "Start the next feed on the side you finished on. The card at the top of the app remembers which that was.",
+      "Evenings of feed-after-feed-after-feed (cluster feeding) are normal, especially around 2–3 weeks, 6 weeks and 3 months. It is not a sign of running out of milk.",
+      "Breastfed babies are usually advised to have vitamin D drops — ask the pediatrician which and how much."
+    ] },
+
+    { t: "Signs the baby is hungry", notes: [
+      "Early: stirring, mouth opening, turning to root, hands to the mouth. This is the easiest moment to latch.",
+      "Getting on: stretching, more movement, fussing, hand in the mouth.",
+      "Late: crying hard, red face, frantic. Calm the baby first — skin to skin, a finger to suck — then latch, since an upset baby latches badly.",
+      "Sucking on a fist isn't always hunger, but in the early weeks it is worth offering."
+    ] },
+
+    { t: "Wet and dirty diapers", days: [
+      ["Day 1", "1 or more", "1+ black, tarry"],
+      ["Day 2", "2 or more", "1–2 dark"],
+      ["Day 3", "3 or more", "3+ greenish brown"],
+      ["Day 4", "4 or more", "3+ yellow, looser"],
+      ["Day 5", "5 or more", "3+ yellow, seedy"],
+      ["Day 6+", "6 or more", "3–4+ yellow, seedy"]
+    ], notes: [
+      "A rough rule for the first week: the number of wet diapers keeps up with the days of life, then settles at 6 or more heavy ones a day.",
+      "Wet should be pale, and shouldn't smell strong. Dark urine, or a diaper that stays dry a long time, means offer a feed and count the day's diapers.",
+      "A brick-red or orange powdery stain can happen in the first 2 or 3 days. After that it is worth a call.",
+      "Milk stools are yellow, loose and seedy — like grainy mustard. Runny is normal; formed little pellets are not.",
+      "After about 4 to 6 weeks some breastfed babies go days between poops. That can be perfectly normal as long as it stays soft when it comes and the baby is comfortable and feeding well.",
+      "Disposables hide how wet they are. A wet one feels noticeably heavier than a dry one — worth comparing once so you know the difference."
+    ] },
+
+    { t: "Signs feeding is going well", notes: [
+      "You can hear swallowing — a soft 'kuh' every suck or two once the milk lets down.",
+      "The breast feels softer after the feed than before it.",
+      "The baby starts tense and finishes loose: open hands, relaxed arms, often asleep.",
+      "Diaper counts are keeping up with the day.",
+      "Most babies lose up to about 7–10% of their birth weight in the first days and are back to it by 10 to 14 days, then gain steadily.",
+      "Content between most feeds. Some fussing is normal; feeding constantly and still unsettled, with few wet diapers, is not."
+    ] },
+
+    { t: "Latch and sore nipples", notes: [
+      "Nose to nipple, chin in first, wait for a wide open mouth, then bring the baby to you rather than leaning in.",
+      "A good latch takes in a mouthful of breast, not just the nipple: more areola showing above the top lip than below, lips flared, chin pressed in and nose clear.",
+      "The first few seconds can tug. Pain that carries on through the feed means unlatch — slide a clean finger into the corner of the mouth to break the suction — and try again.",
+      "The nipple should come out round. Creased, flattened or lipstick-shaped means the latch was shallow.",
+      "Sore: a little expressed milk rubbed in and left to air dry, and a fresh position next feed.",
+      "Engorged: feed often, brief warmth and a gentle hand express before the feed to soften the areola so it can be latched, cold after.",
+      "A lactation consultant is worth calling early rather than as a last resort — most nipple pain is a latch fix, and it is easier fixed in week 1 than week 4."
+    ] },
+
+    { t: "Call about the baby if", cls: "urgent", notes: [
+      "Under 3 months and a temperature of 100.4°F / 38°C or higher — call straight away, at any hour.",
+      "Fewer wet diapers than the list above, no wet diaper in 6 hours, or no poop in 24 hours in the first weeks.",
+      "Hard to wake, floppy, or refusing to feed.",
+      "Yellow skin or eyes that is spreading, deepening, or reaching the arms and legs.",
+      "Still under birth weight at 2 weeks, or not gaining after that.",
+      "Dry mouth, no tears, or a sunken soft spot.",
+      "Breathing fast, grunting, or sucking in under the ribs.",
+      "Forceful repeated vomiting, green vomit, or blood in the stool.",
+      "Anything that just feels wrong. Nobody minds the call that turns out to be nothing."
+    ] },
+
+    { t: "Call about yourself if", cls: "urgent", notes: [
+      "A red, hot, painful patch on the breast with chills or a fever — that is mastitis and it needs treating, not waiting out. Keep feeding on that side meanwhile.",
+      "Soaking through a pad in an hour, or clots bigger than an egg.",
+      "A bad headache, changes in your vision, or sudden swelling.",
+      "Pain, redness or swelling in a calf.",
+      "Feeling low, blank, hopeless, or having thoughts that frighten you. This is common, it is treatable, and it is worth saying out loud today rather than next week."
+    ] },
+
+    { t: "Safe sleep", notes: [
+      "On the back, every sleep, until the baby's first birthday.",
+      "On a firm flat surface of their own — crib or bassinet — in your room for the first 6 months.",
+      "Nothing loose in with them: no pillows, bumpers, blankets or toys. A sleep sack instead of a blanket.",
+      "Never on a sofa or armchair with the baby. Falling asleep there is far riskier than a bed.",
+      "Comfortably warm, not hot — one more thin layer than you'd want yourself, and not overheated.",
+      "Once feeding is going well, a pacifier at sleep time is protective."
+    ] },
+
+    { t: "Other things worth knowing", notes: [
+      "Newborns sleep 14 to 17 hours a day, in short bursts around the clock. Days and nights sort themselves out over the first couple of months.",
+      "Small spit-ups are normal and are laundry, not a medical problem, as long as weight is going on.",
+      "The cord stump falls off in 1 to 3 weeks. Keep it dry and the diaper folded below it.",
+      "Sneezing, hiccups, squeaks and irregular breathing pauses of a few seconds are all normal.",
+      "Growth spurts around 2–3 weeks, 6 weeks and 3 months mean a couple of ravenous days. Feed through them; supply follows demand.",
+      "You cannot spoil a newborn by holding them."
+    ] }
+  ];
+
   /* What changed, newest first. The top entry is the version running, and it is
      what the menu shows — the quickest way to tell whether the phone has picked
      up an update yet. Add a new entry at the top whenever you ship, and bump
      CACHE in sw.js in the same commit. */
   var VERSIONS = [
+    { v: "1.11", date: "15 Aug 2026", notes: [
+      "A ? button next to the gear: newborn basics, for the things that are hard to remember at 4 a.m.",
+      "How often to feed, hunger cues, how many wet and dirty diapers to expect on each day of the first week, latch and sore nipples, safe sleep, and when something is worth a phone call.",
+      "It's a reference and nothing more — it never looks at your log and it doesn't tell you what to do."
+    ] },
     { v: "1.10", date: "15 Aug 2026", notes: [
       "The medicine form now picks from a list instead of typing: it opens on Ibuprofen 400 mg, so a usual dose is just Save.",
       "Amounts go 200, 400, 600, 800, 1000 mg, with Not recorded if you'd rather not put one.",
@@ -2015,7 +2174,8 @@
   $("menuBtn").addEventListener("click", function () { $("menuScrim").hidden = false; });
   $("menuClose").addEventListener("click", function () { $("menuScrim").hidden = true; });
 
-  [$("editorScrim"), $("diaperScrim"), $("medScrim"), $("menuScrim"), $("logScrim")].forEach(function (scrim) {
+  [$("editorScrim"), $("diaperScrim"), $("medScrim"), $("menuScrim"), $("logScrim"),
+   $("guideScrim")].forEach(function (scrim) {
     scrim.addEventListener("click", function (ev) {
       if (ev.target === scrim) scrim.hidden = true;
     });
@@ -2338,6 +2498,71 @@
 
   $("logClose").addEventListener("click", function () { $("logScrim").hidden = true; });
 
+  /* ---------------- newborn basics ---------------- */
+
+  function guideTable(days) {
+    var grid = document.createElement("div");
+    grid.className = "gtable";
+
+    ["Age", "Wet", "Dirty"].forEach(function (head) {
+      var cell = document.createElement("div");
+      cell.className = "gh";
+      cell.textContent = head;
+      grid.appendChild(cell);
+    });
+
+    days.forEach(function (row) {
+      row.forEach(function (text, i) {
+        var cell = document.createElement("div");
+        if (!i) cell.className = "gd";
+        cell.textContent = text;
+        grid.appendChild(cell);
+      });
+    });
+
+    return grid;
+  }
+
+  function renderGuide() {
+    $("guideNote").textContent = GUIDE_NOTE;
+
+    var host = $("guide");
+    host.innerHTML = "";
+
+    GUIDE.forEach(function (sec) {
+      var box = document.createElement("details");
+      if (sec.cls) box.className = sec.cls;
+
+      var head = document.createElement("summary");
+      head.textContent = sec.t;
+      box.appendChild(head);
+
+      if (sec.days) box.appendChild(guideTable(sec.days));
+
+      var list = document.createElement("ul");
+      sec.notes.forEach(function (note) {
+        var li = document.createElement("li");
+        li.textContent = note;
+        list.appendChild(li);
+      });
+
+      box.appendChild(list);
+      host.appendChild(box);
+    });
+  }
+
+  renderGuide();
+
+  /* Opens the same way every time — folded shut and at the top — rather than
+     wherever it was left days ago. */
+  $("guideBtn").addEventListener("click", function () {
+    $("guide").querySelectorAll("details").forEach(function (box) { box.open = false; });
+    $("guideScrim").hidden = false;
+    $("guideScrim").querySelector(".sheet").scrollTop = 0;
+  });
+
+  $("guideClose").addEventListener("click", function () { $("guideScrim").hidden = true; });
+
   /* Where a backup can go depends on the browser, so say which one she has
      rather than promising a share sheet that may never appear. */
   function renderShareHint() {
@@ -2385,8 +2610,11 @@
     lock.release().catch(function () {});
   }
 
+  /* Any sheet at all: reading the basics one-handed mid-feed is the case this
+     exists for, and a veil dropping over it would eat the next tap. */
   function sheetOpen() {
-    return !$("editorScrim").hidden || !$("diaperScrim").hidden || !$("menuScrim").hidden;
+    return !$("editorScrim").hidden || !$("diaperScrim").hidden || !$("medScrim").hidden ||
+      !$("menuScrim").hidden || !$("logScrim").hidden || !$("guideScrim").hidden;
   }
 
   function paintVeil() {

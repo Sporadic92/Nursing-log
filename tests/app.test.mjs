@@ -688,6 +688,55 @@ await page.screenshot({ path: join(SHOTS, 'version-log.png') });
 await page.click('#logClose');
 check('closing the log leaves the app', !(await page.isVisible('#logScrim')));
 
+// ---------- newborn basics ----------
+const logBefore = await page.textContent('#history');
+await page.click('#guideBtn');
+check('the ? button opens the basics', await page.isVisible('#guideScrim'));
+check('it says it is not medical advice',
+  (await page.textContent('#guideNote')).toLowerCase().includes('not medical advice'));
+
+const sections = await page.$$eval('#guide details', ns => ns.map(n => ({
+  title: n.querySelector('summary').textContent,
+  open: n.open,
+  bullets: n.querySelectorAll('li').length,
+  urgent: n.classList.contains('urgent'),
+})));
+check('several sections are listed', sections.length >= 6);
+check('every section says something', sections.every(s => s.bullets >= 3));
+check('everything starts folded, so the headings fit one screen',
+  sections.every(s => !s.open));
+check('feeding is the first heading', /feed/i.test(sections[0].title));
+check('the call-someone sections stand out', sections.filter(s => s.urgent).length >= 1);
+check('folded, every heading fits without scrolling',
+  await page.$eval('#guideScrim .sheet', n => n.scrollHeight <= n.clientHeight + 1));
+await page.screenshot({ path: join(SHOTS, 'guide.png') });
+
+// the diaper table is the reason most of these taps happen
+const diaperIdx = sections.findIndex(s => /diaper/i.test(s.title));
+check('diapers has its own section', diaperIdx >= 0);
+await (await page.$$('#guide summary'))[diaperIdx].click();
+const days = await page.$$eval('#guide .gtable div', ns => ns.map(n => n.textContent));
+check('the table covers the first week', days.filter(d => /^Day /.test(d)).length >= 6);
+check('day one expects a wet and a black one',
+  days.includes('Day 1') && days.some(d => /black/i.test(d)));
+check('by day six it is six or more', days.some(d => /Day 6/.test(d)) && days.some(d => /6 or more/.test(d)));
+const guideText = (await page.textContent('#guide')).toLowerCase();
+check('it says how often to feed', guideText.includes('8 to 12'));
+check('it flags a newborn fever', guideText.includes('100.4'));
+check('no medicine doses are advised', !/\b\d+\s?mg\b/.test(guideText));
+await page.screenshot({ path: join(SHOTS, 'guide-diapers.png') });
+
+await page.click('#guideClose');
+check('closing the basics leaves the app', !(await page.isVisible('#guideScrim')));
+check('reading the basics changed nothing', await page.textContent('#history') === logBefore);
+
+// it opens the same way every time, not wherever it was left
+await page.click('#guideBtn');
+check('reopening folds it back up',
+  await page.$$eval('#guide details', ns => ns.every(n => !n.open)));
+await page.click('#guideScrim', { position: { x: 206, y: 40 } });
+check('a tap outside closes it too', !(await page.isVisible('#guideScrim')));
+
 // ---------- v1 data migrates ----------
 const migCtx = await browser.newContext({ viewport: { width: 412, height: 915 } });
 const mig = await migCtx.newPage();
@@ -912,6 +961,13 @@ await dim.waitForTimeout(1400);
 check('does not dim over a sheet', !(await dim.isVisible('#dimVeil')));
 await dim.click('#menuClose');
 
+// looking something up mid-feed is what the basics are for, so no veil over them either
+await dim.click('#guideBtn');
+await dim.waitForTimeout(1400);
+check('does not dim over the basics', !(await dim.isVisible('#dimVeil')));
+check('the feed is still running behind it', await dim.isVisible('#runningView'));
+await dim.click('#guideClose');
+
 await dim.click('#stopBtn');
 await dim.waitForTimeout(1400);
 check('no dimming once the feed ends', !(await dim.isVisible('#dimVeil')));
@@ -960,6 +1016,10 @@ await dp.reload({ waitUntil: 'networkidle' });
 await shot(dp, 'dark');
 await dp.click('.entry');
 await dp.screenshot({ path: `${SHOTS}/editor.png` });
+await dp.reload({ waitUntil: 'networkidle' });   // the newest row may be a diaper or a feed; just start clean
+await dp.click('#guideBtn');
+await dp.$$eval('#guide summary', ns => ns[2].click());
+await dp.screenshot({ path: `${SHOTS}/guide-dark.png` });
 await dark.close();
 
 await browser.close();

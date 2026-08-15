@@ -108,13 +108,34 @@ and go into the backup, the spreadsheet, and the doctor's summary.
 The app doesn't tell you when the next dose is due or what's safe to take — it only records what
 you've taken, so you can see it at a glance or show someone.
 
+## Newborn basics (the ? button)
+
+The **?** button next to the ⚙ opens a page of ordinary newborn guidance — the things that are
+hard to hold on to at 4 a.m. It's a list of headings; tap one to open it:
+
+- **How often to feed** — 8 to 12 feeds in 24 hours, timed start to start, and why cluster
+  feeding evenings are normal.
+- **Signs the baby is hungry** — the early cues, and why crying is a late one.
+- **Wet and dirty diapers** — a table of how many wet and how many dirty to expect on each day
+  of the first week, what they should look like, and when a change is worth a call.
+- **Signs feeding is going well**, **Latch and sore nipples**, and **Safe sleep**.
+- **Call about the baby if** and **Call about yourself if** — the red flags, marked in red.
+
+It's a reference and nothing else: it never reads the log, it doesn't work anything out from
+what you've recorded, and it doesn't tell you what to do. It says so at the top — whatever the
+midwife or pediatrician says wins.
+
+To change the wording, or add a section of your own, look for `var GUIDE = [` in `index.html`.
+Each section is a heading and a list of sentences, and adding one is a matter of copying the
+pattern of the one above it.
+
 ## Backups (worth reading)
 
 The log lives in the phone's browser storage. That means it survives closing the app, restarting
 the phone, and losing signal — but it would be erased by clearing Chrome's site data for this
 site, or by uninstalling.
 
-Tap the **⚙** button in the top-right for:
+Tap the **⚙** button in the top-right (next to the **?**) for:
 
 - **Summary for the doctor (PDF)** — one page covering the last two weeks: feeds and minutes per
   day, average feed length, longest gap between feeds, wet and dirty nappies per day, a chart of
