@@ -197,6 +197,17 @@
   .btn.danger { color: var(--danger); }
   .btn.wide { grid-column: 1 / -1; }
 
+  #detailBody { margin: 0; }
+  .detail-row {
+    display: flex; justify-content: space-between; align-items: baseline;
+    gap: 18px; padding: 13px 2px; border-bottom: 1px solid var(--line);
+  }
+  .detail-row:last-child { border-bottom: none; }
+  .detail-row dt { color: var(--muted); font-size: 14px; flex: none; }
+  .detail-row dd { margin: 0; font-weight: 600; text-align: right; }
+  .detail-row.stacked { display: block; }
+  .detail-row.stacked dd { text-align: left; font-weight: 400; margin-top: 4px; white-space: pre-wrap; }
+
   .menu-item {
     display: block; width: 100%; text-align: left; background: none; border: none;
     color: var(--text); font: inherit; padding: 16px 8px; border-bottom: 1px solid var(--line);
@@ -286,6 +297,18 @@
 
   <div id="history"></div>
 
+</div>
+
+<!-- Record detail (read-only; editing is a deliberate second step) -->
+<div class="scrim" id="detailScrim" hidden>
+  <div class="sheet" role="dialog" aria-modal="true">
+    <h3 id="detailTitle">Feeding</h3>
+    <dl id="detailBody"></dl>
+    <div class="sheet-actions">
+      <button class="btn" id="detailClose">Close</button>
+      <button class="btn primary" id="detailEdit">Edit</button>
+    </div>
+  </div>
 </div>
 
 <!-- Feeding editor -->
@@ -766,14 +789,14 @@
         pill.textContent = feedSide(e);
         line1.textContent = clockTime(e.start) + " · " + durationText(feedMinutes(e));
         line2.textContent = feedSubText(e);
-        row.addEventListener("click", function () { openFeedEditor(e.id); });
+        row.addEventListener("click", function () { openDetail("feed", e.id); });
       } else {
         var d = item.data;
         pill.className = "pill " + (d.pee && d.poop ? "both-d" : d.poop ? "poop" : "pee");
         pill.textContent = d.pee && d.poop ? "💧💩" : d.poop ? "💩" : "💧";
         line1.textContent = clockTime(d.time) + " · " + diaperLabel(d);
         line2.textContent = d.size ? SIZE_NAME[d.size] + " poop" : "Diaper";
-        row.addEventListener("click", function () { openDiaperEditor(d.id); });
+        row.addEventListener("click", function () { openDetail("diaper", d.id); });
       }
 
       var notes = item.data.notes;
@@ -860,6 +883,70 @@
       setActive(null);
       renderAll();
     }
+  });
+
+  /* ---------------- record detail ---------------- */
+
+  var detailKind = null, detailId = null;
+
+  function whenText(ms) {
+    return dayLabel(dayKey(ms)) + " · " + clockTime(ms);
+  }
+
+  function detailRow(term, value, stacked) {
+    var row = document.createElement("div");
+    row.className = "detail-row" + (stacked ? " stacked" : "");
+    var dt = document.createElement("dt");
+    dt.textContent = term;
+    var dd = document.createElement("dd");
+    dd.textContent = value;
+    row.appendChild(dt);
+    row.appendChild(dd);
+    return row;
+  }
+
+  function findById(list, key, id) {
+    for (var i = 0; i < list.length; i++) {
+      if (list[i][key] === id) return list[i];
+    }
+    return null;
+  }
+
+  function openDetail(kind, id) {
+    var body = $("detailBody");
+    body.textContent = "";
+
+    if (kind === "feed") {
+      var e = findById(feeds, "id", id);
+      if (!e) return;
+      $("detailTitle").textContent = "Feeding · " + SIDE_NAME[feedSide(e)];
+      body.appendChild(detailRow("Started", whenText(e.start)));
+      body.appendChild(detailRow("Total", durationText(feedMinutes(e))));
+      if (e.leftSec > 0) body.appendChild(detailRow("Left", durationText(minutesOf(e.leftSec))));
+      if (e.rightSec > 0) body.appendChild(detailRow("Right", durationText(minutesOf(e.rightSec))));
+      if (e.endSide) body.appendChild(detailRow("Ended on", SIDE_NAME[e.endSide]));
+      if (e.notes) body.appendChild(detailRow("Notes", e.notes, true));
+    } else {
+      var d = findById(diapers, "id", id);
+      if (!d) return;
+      $("detailTitle").textContent = "Diaper · " + diaperLabel(d);
+      body.appendChild(detailRow("Logged", whenText(d.time)));
+      body.appendChild(detailRow("What", diaperLabel(d)));
+      if (d.size) body.appendChild(detailRow("How big", SIZE_NAME[d.size]));
+      if (d.notes) body.appendChild(detailRow("Notes", d.notes, true));
+    }
+
+    detailKind = kind;
+    detailId = id;
+    $("detailScrim").hidden = false;
+  }
+
+  $("detailClose").addEventListener("click", function () { $("detailScrim").hidden = true; });
+
+  $("detailEdit").addEventListener("click", function () {
+    $("detailScrim").hidden = true;
+    if (detailKind === "feed") openFeedEditor(detailId);
+    else openDiaperEditor(detailId, null);
   });
 
   /* ---------------- feeding editor ---------------- */
@@ -1117,7 +1204,7 @@
   $("menuBtn").addEventListener("click", function () { $("menuScrim").hidden = false; });
   $("menuClose").addEventListener("click", function () { $("menuScrim").hidden = true; });
 
-  [$("editorScrim"), $("diaperScrim"), $("menuScrim")].forEach(function (scrim) {
+  [$("detailScrim"), $("editorScrim"), $("diaperScrim"), $("menuScrim")].forEach(function (scrim) {
     scrim.addEventListener("click", function (ev) {
       if (ev.target === scrim) scrim.hidden = true;
     });
