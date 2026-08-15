@@ -2,7 +2,7 @@
 
 A simple breastfeeding tracker that installs on an Android phone like a normal app.
 Records **when** a feeding started, **how long she spent on each side**, and any **notes**,
-plus **diapers** (pee, poop, or both). Everything is stored on the phone — no account, no
+plus **diapers** (pee, poop, or both) and **medicines** she takes. Everything is stored on the phone — no account, no
 internet needed after the first visit, nothing sent anywhere.
 
 ## Put it on her phone (about 5 minutes)
@@ -81,10 +81,29 @@ The two cards at the top always show **how long since the last feeding** (and wh
 ended on, so it's clear where to pick up next) and **how long since the last diaper** — usually
 the thing you want at 3 a.m.
 
-Below them, feedings and diapers share one timeline, newest first, with per-day totals. The
-**All / Feeds / Diapers** buttons narrow it to one kind when you want to read just that — the
+Below them, feedings, diapers and medicines share one timeline, newest first, with per-day
+totals. The **All / Feeds / Diapers / Meds** buttons narrow it to one kind when you want to read just that — the
 day totals follow whichever view you pick, and the choice is remembered next time you open
 the app.
+
+## Medicines
+
+The third card logs what you take and when — it was added for ibuprofen after the hospital, but
+it takes any medicine you type in.
+
+The line at the top says what you last took and how long ago, which is usually the thing you
+actually want to know. Underneath, the medicines you've taken most recently become buttons: tap
+**Ibuprofen 400 mg** and the form opens already filled in, with the time set to now — you only
+have to press Save. **Something else** opens a blank one, and **+ Add a past dose** is there for
+a dose you forgot to log at the time.
+
+Only the name is required. The amount is optional, and there's a notes box if you want it.
+
+Doses show in the timeline with a 💊, count in today's totals, have their own **Meds** filter,
+and go into the backup, the spreadsheet, and the doctor's summary.
+
+The app doesn't tell you when the next dose is due or what's safe to take — it only records what
+you've taken, so you can see it at a glance or show someone.
 
 ## Backups (worth reading)
 
@@ -96,9 +115,9 @@ Tap the **⚙** button in the top-right for:
 
 - **Summary for the doctor (PDF)** — one page covering the last two weeks: feeds and minutes per
   day, average feed length, longest gap between feeds, wet and dirty nappies per day, a chart of
-  each day, and a day-by-day table. Any notes you wrote go on a second page. It opens the share
+  each day, and a day-by-day table. Medicines taken, and any notes you wrote, go on a second page. It opens the share
   sheet, so you can email it ahead of an appointment or show it on the phone.
-- **Export spreadsheet (CSV)** — feedings and diapers in one chronological sheet, with columns
+- **Export spreadsheet (CSV)** — feedings, diapers and medicines in one chronological sheet, with columns
   for per-side minutes, ending side, pee/poop, and poop size. Opens in Excel or Google Sheets, handy for the pediatrician.
 - **Save backup file** — a file with everything in it. On the phone this opens Android's share
   sheet, so you can send it straight to Google Drive, email it to yourself, or save it to Files —
