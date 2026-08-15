@@ -102,8 +102,8 @@ total elapsed, a live per-side tile each, Stop & Save), diaper card (time since 
 Poop / Both), today's stats, `All / Feeds / Diapers` filter, then the timeline grouped by day
 with per-day totals.
 
-Three bottom sheets: the **feeding editor**, the **diaper editor**, and the **menu** (PDF
-summary, CSV export, JSON backup, restore, about).
+Four bottom sheets: the **feeding editor**, the **diaper editor**, the **menu** (PDF summary,
+CSV export, JSON backup, restore, what's new, about), and the **version log**.
 
 Reading and editing a record are the *same sheet*. A row tap opens its editor with the
 `locked` class on `.sheet`: every input `disabled`, chips inert via `pointer-events: none` with
@@ -173,6 +173,15 @@ Interaction rules worth preserving:
   Restore parses the contents, not the extension, and `#fileInput` accepts `.txt` for this
   reason. Don't test the share path with a stub that approves everything — the suite models
   the allowlist.
+- **`VERSIONS` is the changelog and the version number both.** Newest first; `VERSIONS[0]` is
+  what's running and what the menu line shows. Add an entry at the top in the same commit as
+  the change, written for her rather than for a reviewer, and bump `CACHE` in `sw.js` alongside
+  it. The version on screen is how she can tell whether the phone has picked up an update.
+- **File names carry date *and* time** (`…-20260815-1127.json`). A second backup on the same
+  day would otherwise land on the first, and Chrome asks "download again?" for a repeat name.
+- **The backup toast says which way the file went** — "Backed up" only after the share sheet
+  took it, "Saved to Downloads" otherwise. Don't collapse those: Downloads is the outcome this
+  app is trying to avoid, and the wording is the only sign of which path ran.
 - **The nudge counts from the oldest record when there is no backup yet**, so a log started
   today isn't nagged. Overdue is 10 days; it shows as a dot on the menu button and a highlighted
   line inside the menu, and nowhere else — this app does not get banners.

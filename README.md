@@ -106,6 +106,9 @@ Tap the **⚙** button in the top-right for:
   the shared copy is named `…json.txt`; that's the same file, and Restore reads it back fine.
 - **Restore from backup** — reads that file back in. It skips records already in the log, so
   restoring twice won't create duplicates.
+- **What's new** — the version running on this phone, and what changed in each one before it.
+  Worth a look after an update: if the version at the top isn't the newest, the phone is still
+  on the old copy — close the app fully and open it again.
 
 If it's been more than about ten days since the last backup, a small dot appears on the **⚙**
 button and the menu says how long it's been. That's the whole reminder — no banners, no popups.

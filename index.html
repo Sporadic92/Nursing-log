@@ -222,6 +222,16 @@
   .menu-item:last-of-type { border-bottom: none; }
   .menu-item small { display: block; color: var(--muted); font-size: 13px; }
 
+  /* Version log: the running version first, marked, then everything before it. */
+  .vlog { padding-top: 2px; }
+  .vlog-entry { padding: 12px 0; border-bottom: 1px solid var(--line); }
+  .vlog-entry:last-child { border-bottom: none; }
+  .vlog-head { font-size: 15px; font-weight: 600; }
+  .vlog-entry.current .vlog-head { color: var(--accent); }
+  .vlog-date { font-weight: 400; font-size: 13px; color: var(--muted); margin-left: 8px; }
+  .vlog-entry ul { margin: 6px 0 0; padding-left: 18px; }
+  .vlog-entry li { color: var(--muted); font-size: 14px; line-height: 1.45; margin: 4px 0; }
+
   /* While a feed runs the screen is held awake, so it goes dark on its own
      instead — bright enough to read the clock, dim enough for a dark nursery. */
   .veil {
@@ -415,11 +425,23 @@
     <button class="menu-item" id="exportCsv">Export spreadsheet (CSV)<small>Feedings and diapers, for Excel or Google Sheets</small></button>
     <button class="menu-item" id="exportJson">Save backup file<small>Send it to Drive, email, or wherever you keep files</small></button>
     <button class="menu-item" id="importJson">Restore from backup<small>Adds anything missing from a backup file</small></button>
+    <button class="menu-item" id="whatsNew">What's new<small id="versionLine">Version</small></button>
     <button class="menu-item" id="aboutBtn">About this app<small>Where your data lives</small></button>
     <div class="sheet-actions">
       <button class="btn wide" id="menuClose">Close</button>
     </div>
     <input type="file" id="fileInput" accept="application/json,.json,text/plain,.txt" hidden>
+  </div>
+</div>
+
+<!-- Version log -->
+<div class="scrim" id="logScrim" hidden>
+  <div class="sheet" role="dialog" aria-modal="true">
+    <h3>What's new</h3>
+    <div class="vlog" id="versionLog"></div>
+    <div class="sheet-actions">
+      <button class="btn wide" id="logClose">Close</button>
+    </div>
   </div>
 </div>
 
@@ -442,6 +464,46 @@
   var BACKUP_KEY = "nursinglog.backup.v1";
   var BACKUP_NUDGE_MS = 10 * 86400000;
   var SIDE_NAME = { L: "Left", R: "Right", B: "Both" };
+
+  /* What changed, newest first. The top entry is the version running, and it is
+     what the menu shows — the quickest way to tell whether the phone has picked
+     up an update yet. Add a new entry at the top whenever you ship, and bump
+     CACHE in sw.js in the same commit. */
+  var VERSIONS = [
+    { v: "1.8", date: "15 Aug 2026", notes: [
+      "Saving a backup opens the share sheet again, so it can go to Drive. Chrome refuses a .json file, so the shared copy is named .json.txt — Restore reads it either way.",
+      "Backups and exports are named with the time as well as the date, so a second backup on the same day doesn't overwrite the first.",
+      "This version log."
+    ] },
+    { v: "1.7", date: "15 Aug 2026", notes: [
+      "One-page PDF summary for appointments: per-day feeds and minutes, average feed, longest gap, nappies, and a chart."
+    ] },
+    { v: "1.6", date: "15 Aug 2026", notes: [
+      "Backups go to the share sheet instead of Downloads.",
+      "A dot on the menu button when it has been about ten days since the last backup."
+    ] },
+    { v: "1.5", date: "15 Aug 2026", notes: [
+      "The screen stays awake during a feed, and dims after half a minute.",
+      "Deleting a record offers Undo instead of a confirm box."
+    ] },
+    { v: "1.4", date: "15 Aug 2026", notes: [
+      "Tapping a record opens it read-only; editing is a deliberate second tap."
+    ] },
+    { v: "1.3", date: "15 Aug 2026", notes: [
+      "Timeline filters for feeds and diapers, and a form for logging a diaper."
+    ] },
+    { v: "1.2", date: "15 Aug 2026", notes: [
+      "Records which side a feeding ended on, and shows it on the last-fed line."
+    ] },
+    { v: "1.1", date: "15 Aug 2026", notes: [
+      "Times each side separately, with switching mid-feed.",
+      "Diaper logging."
+    ] },
+    { v: "1.0", date: "15 Aug 2026", notes: [
+      "Nursing Log: feed timer, timeline, daily totals, CSV export and backups, installable and offline."
+    ] }
+  ];
+  var VERSION = VERSIONS[0].v;
 
   var $ = function (id) { return document.getElementById(id); };
 
@@ -1608,7 +1670,7 @@
   $("menuBtn").addEventListener("click", function () { $("menuScrim").hidden = false; });
   $("menuClose").addEventListener("click", function () { $("menuScrim").hidden = true; });
 
-  [$("editorScrim"), $("diaperScrim"), $("menuScrim")].forEach(function (scrim) {
+  [$("editorScrim"), $("diaperScrim"), $("menuScrim"), $("logScrim")].forEach(function (scrim) {
     scrim.addEventListener("click", function (ev) {
       if (ev.target === scrim) scrim.hidden = true;
     });
@@ -1654,17 +1716,17 @@
 
     if (file) {
       navigator.share({ files: [file] }).then(function () {
-        if (onKept) onKept();
+        if (onKept) onKept(true);
       }).catch(function (err) {
         if (err && err.name === "AbortError") return;   /* she backed out; nothing was saved */
         downloadBlob(filename, blob);
-        if (onKept) onKept();
+        if (onKept) onKept(false);
       });
       return;
     }
 
     downloadBlob(filename, blob);
-    if (onKept) onKept();
+    if (onKept) onKept(false);
   }
 
   function lastBackupMs() {
@@ -1708,15 +1770,22 @@
     el.classList.toggle("due", overdue);
   }
 
-  function markBackedUp() {
+  /* Say which way it went. "Backed up" after a file lands in Downloads reads as
+     safe when it isn't especially, and it's the one clue to whether the share
+     sheet was offered at all. */
+  function markBackedUp(shared) {
     localStorage.setItem(BACKUP_KEY, String(Date.now()));
     renderBackupStatus();
-    toast("Backed up");
+    toast(shared ? "Backed up" : "Saved to Downloads");
   }
 
+  /* Date and time, so two backups on the same day are two files rather than one
+     overwriting the other — and Chrome stops asking whether to download the
+     same name again. */
   function stamp() {
     var d = new Date();
-    return d.getFullYear() + pad(d.getMonth() + 1) + pad(d.getDate());
+    return d.getFullYear() + pad(d.getMonth() + 1) + pad(d.getDate()) +
+      "-" + pad(d.getHours()) + pad(d.getMinutes());
   }
 
   function csvCell(value) {
@@ -1841,6 +1910,47 @@
     };
     reader.readAsText(file);
   });
+
+  function renderVersionLog() {
+    $("versionLine").textContent = "Version " + VERSION + " · what changed, and when";
+
+    var host = $("versionLog");
+    host.innerHTML = "";
+
+    VERSIONS.forEach(function (rel, i) {
+      var box = document.createElement("div");
+      box.className = i ? "vlog-entry" : "vlog-entry current";
+
+      var head = document.createElement("div");
+      head.className = "vlog-head";
+      head.textContent = "Version " + rel.v + (i ? "" : " · running now");
+
+      var when = document.createElement("span");
+      when.className = "vlog-date";
+      when.textContent = rel.date;
+      head.appendChild(when);
+
+      var list = document.createElement("ul");
+      rel.notes.forEach(function (note) {
+        var li = document.createElement("li");
+        li.textContent = note;
+        list.appendChild(li);
+      });
+
+      box.appendChild(head);
+      box.appendChild(list);
+      host.appendChild(box);
+    });
+  }
+
+  renderVersionLog();
+
+  $("whatsNew").addEventListener("click", function () {
+    $("menuScrim").hidden = true;
+    $("logScrim").hidden = false;
+  });
+
+  $("logClose").addEventListener("click", function () { $("logScrim").hidden = true; });
 
   $("aboutBtn").addEventListener("click", function () {
     alert(

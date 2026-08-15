@@ -399,7 +399,7 @@ const pdfPath = join(SHOTS, 'summary.pdf');
 await pdfDl.saveAs(pdfPath);
 const pdf = (await readFile(pdfPath)).toString('latin1');
 
-check('pdf filename', /nursing-log-summary-\d{8}\.pdf/.test(pdfDl.suggestedFilename()));
+check('pdf filename carries date and time', /nursing-log-summary-\d{8}-\d{4}\.pdf/.test(pdfDl.suggestedFilename()));
 check('pdf header', pdf.startsWith('%PDF-1.'));
 check('pdf ends properly', pdf.trimEnd().endsWith('%%EOF'));
 
@@ -495,6 +495,34 @@ await page.waitForTimeout(400);
 check('re-import adds nothing', (await page.$$('.entry')).length === beforeReload);
 check('no-op toast', (await page.textContent('#toastText')).includes('Nothing new'));
 
+// ---------- version log ----------
+await page.click('#menuBtn');
+const versionLine = await page.textContent('#versionLine');
+check('the menu names the running version', /^Version \d+\.\d+ · /.test(versionLine));
+
+await page.click('#whatsNew');
+check('what\'s new opens its own sheet', await page.isVisible('#logScrim'));
+check('the menu closes behind it', !(await page.isVisible('#menuScrim')));
+
+const entries = await page.$$eval('#versionLog .vlog-entry', ns => ns.map(n => ({
+  head: n.querySelector('.vlog-head').textContent,
+  current: n.classList.contains('current'),
+  notes: n.querySelectorAll('li').length,
+})));
+check('every version is listed', entries.length >= 2);
+check('the newest is marked as running',
+  entries[0].current && entries[0].head.includes('running now'));
+check('only one is marked', entries.filter(e => e.current).length === 1);
+check('the running entry matches the menu line',
+  versionLine.includes(entries[0].head.split(' · ')[0]));
+check('each version says what changed', entries.every(e => e.notes >= 1));
+check('this release mentions the share sheet',
+  (await page.textContent('#versionLog')).toLowerCase().includes('share sheet'));
+await page.screenshot({ path: join(SHOTS, 'version-log.png') });
+
+await page.click('#logClose');
+check('closing the log leaves the app', !(await page.isVisible('#logScrim')));
+
 // ---------- v1 data migrates ----------
 const migCtx = await browser.newContext({ viewport: { width: 412, height: 915 } });
 const mig = await migCtx.newPage();
@@ -564,7 +592,8 @@ await page.click('#menuBtn');
 const [fresh] = await Promise.all([page.waitForEvent('download'), page.click('#exportJson')]);
 await fresh.saveAs(join(SHOTS, 'nudge-clear.json'));
 check('backing up clears the dot', !(await page.isVisible('#backupDot')));
-check('backing up is confirmed', (await page.textContent('#toastText')).includes('Backed up'));
+check('a download says so rather than claiming a backup',
+  (await page.textContent('#toastText')).includes('Saved to Downloads'));
 check('status resets to today', (await menuText()).includes('today'));
 
 // where the share sheet exists, the file goes to it instead of Downloads
@@ -590,7 +619,7 @@ await sp.click('#menuBtn');
 await sp.click('#exportJson');
 await sp.waitForTimeout(200);
 const shared = await sp.evaluate(() => window.__shared);
-check('backup goes to the share sheet', shared.length === 1 && /nursing-log-backup-\d+\.json/.test(shared[0][0]));
+check('backup goes to the share sheet', shared.length === 1 && /^nursing-log-backup-\d{8}-\d{4}\.json$/.test(shared[0][0]));
 check('sharing counts as a backup', (await sp.textContent('#backupStatus')).includes('today'));
 
 await sp.click('#menuBtn');                       // exporting closes the menu behind it
@@ -631,7 +660,7 @@ await pp.waitForTimeout(300);
 const picky = await pp.evaluate(() => window.__shared);
 const kept = picky[0] || { name: '', body: '{}' };            // nothing shared: the checks below say so
 check('a backup Chrome refuses as json is shared as text',
-  picky.length === 1 && /^nursing-log-backup-\d+\.json\.txt$/.test(kept.name));
+  picky.length === 1 && /^nursing-log-backup-\d{8}-\d{4}\.json\.txt$/.test(kept.name));
 check('the renamed backup still holds the records',
   (JSON.parse(kept.body).entries || []).length === 1);
 check('it reaches the share sheet instead of Downloads', pickyDownloads === 0);
