@@ -509,13 +509,32 @@ await page.click('#medQuick .side-btn');
 check('the button opens the editor', await page.isVisible('#medScrim'));
 check('opening it records nothing', await page.textContent('#statMeds') === '0');
 
+const medOptions = id => page.$$eval(`#${id} option`, ns => ns.map(n => n.textContent));
+check('the medicine is a list', await page.$eval('#mName', n => n.tagName) === 'SELECT');
+check('the amount is a list', await page.$eval('#mDose', n => n.tagName) === 'SELECT');
+check('it opens on ibuprofen', await page.inputValue('#mName') === 'Ibuprofen');
+check('and on 400 mg', await page.inputValue('#mDose') === '400 mg');
+check('amounts climb in 200 mg steps',
+  (await medOptions('mDose')).filter(t => /mg$/.test(t)).join() === '200 mg,400 mg,600 mg,800 mg,1000 mg');
+check('an amount can be left off', (await medOptions('mDose')).includes('Not recorded'));
+check('both lists offer something else',
+  (await medOptions('mName')).some(t => t.startsWith('Something else')) &&
+  (await medOptions('mDose')).some(t => t.startsWith('Something else')));
+check('nothing to type in until then',
+  !(await page.isVisible('#mNameOtherWrap')) && !(await page.isVisible('#mDoseOtherWrap')));
+
+// "Something else" with nothing typed is still not a record
+await page.selectOption('#mName', '__other__');
+check('choosing it opens a box to type in', await page.isVisible('#mNameOtherWrap'));
 await page.click('#medSave');
 check('a dose with no medicine named is refused',
   (await page.textContent('#toastText')).includes('Which medicine'));
 check('and the editor stays open', await page.isVisible('#medScrim'));
 
-await page.fill('#mName', 'Ibuprofen');
-await page.fill('#mDose', '400 mg');
+await page.selectOption('#mName', 'Ibuprofen');
+check('going back to the list hides the box', !(await page.isVisible('#mNameOtherWrap')));
+await page.screenshot({ path: join(SHOTS, 'medicine-editor.png') });
+await page.selectOption('#mDose', '400 mg');
 await page.fill('#mNotes', 'For afterpains');
 await page.click('#medSave');
 check('the dose saves', !(await page.isVisible('#medScrim')));
@@ -544,7 +563,7 @@ await (await page.$$('.entry'))[0].click();
 check('a dose row opens locked',
   await page.$eval('#medScrim .sheet', n => n.classList.contains('locked')));
 check('its fields are disabled',
-  await page.$$eval('#medScrim input, #medScrim textarea', ns => ns.every(n => n.disabled)));
+  await page.$$eval('#medScrim input, #medScrim select, #medScrim textarea', ns => ns.every(n => n.disabled)));
 check('reading a dose offers Close and Edit',
   await page.isVisible('#medClose') && await page.isVisible('#medEdit'));
 check('no delete while reading a dose', !(await page.isVisible('#medDelete')));
@@ -554,7 +573,7 @@ await page.click('#medEdit');
 check('Edit unlocks the dose',
   !(await page.$eval('#medScrim .sheet', n => n.classList.contains('locked'))));
 check('delete appears once editing', await page.isVisible('#medDelete'));
-await page.fill('#mDose', '200 mg');
+await page.selectOption('#mDose', '200 mg');
 await page.click('#medSave');
 check('the edit sticks', (await page.textContent('#medSince')).includes('200 mg'));
 
@@ -567,14 +586,24 @@ await page.fill('#mNotes', 'With food');
 await page.click('#medSave');
 check('editing a dose leaves its time alone', await doseRow() === doseAt);
 
-// an amount is optional, and an empty box says nothing while reading
+// a medicine off the list, with no amount, and how both read back
 await page.click('#addMedBtn');
-await page.fill('#mName', 'Paracetamol');
+await page.selectOption('#mName', '__other__');
+await page.fill('#mNameOther', 'Paracetamol');
+await page.selectOption('#mDose', '');
 await page.click('#medSave');
 check('a dose with no amount is fine', (await page.$$('.entry')).length === 2);
+check('a medicine off the list saves under the name typed',
+  (await page.textContent('#medSince')).includes('Paracetamol'));
 await (await page.$$('.entry'))[0].click();
 check('the empty amount is hidden while reading', !(await page.isVisible('#mDoseWrap')));
-await page.click('#medClose');
+check('reading it shows that name, not "Something else"',
+  await page.inputValue('#mName') === 'Paracetamol');
+check('with nothing to type in while reading', !(await page.isVisible('#mNameOtherWrap')));
+await page.click('#medEdit');
+check('and editing keeps it selected rather than resetting it',
+  await page.inputValue('#mName') === 'Paracetamol');
+await page.click('#medCancel');
 
 check('two medicines make two buttons', (await medButtons()).length === 3);
 
@@ -615,6 +644,17 @@ await medPdf.saveAs(medPdfPath);
 const medPdfText = (await readFile(medPdfPath)).toString('latin1');
 check('the doctor\'s summary lists doses', medPdfText.includes('Ibuprofen 200 mg'));
 check('and says so in the heading', medPdfText.includes('Notes & medicines'));
+
+// an amount off the list survives the same way a name does
+await (await page.$$('.entry'))[0].click();
+await page.click('#medEdit');
+await page.selectOption('#mDose', '__other__');
+await page.fill('#mDoseOther', 'Half a tablet');
+await page.click('#medSave');
+check('an amount off the list saves', (await page.textContent('#medSince')).includes('Half a tablet'));
+await (await page.$$('.entry'))[0].click();
+check('and reads back as itself', await page.inputValue('#mDose') === 'Half a tablet');
+await page.click('#medClose');
 
 await page.click('[data-filter="all"]');
 check('the timeline shows feeds, diapers and doses together',

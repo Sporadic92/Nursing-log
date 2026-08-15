@@ -88,16 +88,19 @@ the app.
 
 ## Medicines
 
-The third card logs what you take and when — it was added for ibuprofen after the hospital, but
-it takes any medicine you type in.
+The third card logs what you take and when — it was added for ibuprofen after the hospital.
 
 The line at the top says what you last took and how long ago, which is usually the thing you
 actually want to know. Underneath, the medicines you've taken most recently become buttons: tap
 **Ibuprofen 400 mg** and the form opens already filled in, with the time set to now — you only
-have to press Save. **Something else** opens a blank one, and **+ Add a past dose** is there for
+have to press Save. **Something else** opens a fresh one, and **+ Add a past dose** is there for
 a dose you forgot to log at the time.
 
-Only the name is required. The amount is optional, and there's a notes box if you want it.
+The form itself is two lists rather than boxes to type in. It opens on **Ibuprofen** and
+**400 mg**, so most of the time you can just press Save. The amounts go 200, 400, 600, 800 and
+1000 mg, or **Not recorded** if you'd rather not put one down. If what you took isn't on either
+list, pick **Something else** at the bottom and type it — it's saved exactly as you write it,
+and it will read back that way whenever you open it again. There's a notes box if you want it.
 
 Doses show in the timeline with a 💊, count in today's totals, have their own **Meds** filter,
 and go into the backup, the spreadsheet, and the doctor's summary.

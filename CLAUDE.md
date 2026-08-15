@@ -81,8 +81,8 @@ diaper  = { id, time,        // epoch ms
             notes }
 
 med     = { id, time,        // epoch ms
-            name,            // free text, trimmed, required — "Ibuprofen"
-            dose,            // free text, may be "" — "400 mg"
+            name,            // trimmed, required — "Ibuprofen"
+            dose,            // may be "" — "400 mg"
             notes }
 
 active  = { start, side,     // "L" | "R"
@@ -102,6 +102,12 @@ Rules the code depends on:
 - **A dose with no medicine named is not a record.** Nothing else identifies it, so
   `normalizeMed()` returns null and the editor refuses to save. The amount is optional: plenty
   of things are taken without one being written down.
+- **The medicine and its amount are still plain strings**, even though the editor picks them
+  from `MED_NAMES` and `MED_DOSES`. The lists are a way to type less, not a set of valid
+  values: "Something else" stores whatever is typed, and a record already holding a name or
+  amount that is not on the list gets it added as an option of its own
+  (`fillMedChoices()`), so opening a record can never quietly rename it. Editing a list means
+  editing that one array — nothing stored refers to it.
 - **Everything is normalized on read.** `normalizeFeed` / `normalizeDiaper` / `normalizeMed`
   are the single migration point, and also run on save and on import, so one function defines a valid record.
   Older feedings stored `{ minutes, side }`; those migrate on read, with `B` split evenly.
@@ -126,7 +132,13 @@ unselected ones dimmed, the field borders dropped so the values read as text, an
 place of Cancel/Save/Delete. **Edit** unlocks it where it stands. Optional rows that are empty
 (notes, poop size, dose) are hidden while locked, so reading never shows a blank box. `setLocked()`
 drives all of it and all three editors go through it — a new editor should too, and any new field
-must be inside the sheet so it gets disabled with the rest.
+must be inside the sheet so it gets disabled with the rest (it disables `input, select, textarea`).
+
+The medicine editor's two fields are `<select>`s: the medicine and the amount, opening on
+**Ibuprofen** and **400 mg** so the usual dose is one tap on Save. Amounts run 200–1000 mg in
+200 mg steps plus *Not recorded*. Both lists end in *Something else*, which reveals the text box
+underneath (`#mNameOtherWrap` / `#mDoseOtherWrap`); `syncMedOther()` shows and hides them, and
+they stay hidden while reading, since the list itself carries the value then.
 
 While a feed is running the app holds a **screen wake lock** and, after `DIM_AFTER` of no
 touch, covers itself with `#dimVeil` — a black screen showing just the clock and the side, at

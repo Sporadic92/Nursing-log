@@ -200,10 +200,11 @@
   }
   .sheet h3 { margin: 0 0 16px; font-size: 18px; }
   label { display: block; font-size: 13px; color: var(--muted); margin: 14px 0 6px; }
-  input[type="date"], input[type="time"], input[type="number"], input[type="text"], textarea {
+  input[type="date"], input[type="time"], input[type="number"], input[type="text"], select, textarea {
     width: 100%; font: inherit; color: var(--text); background: var(--surface);
     border: 1px solid var(--line); border-radius: 12px; padding: 13px 12px;
   }
+  /* The browser's own arrow stays: it is what says this one opens a list. */
   textarea { resize: vertical; min-height: 76px; }
   .sheet-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 20px; }
   .btn {
@@ -219,10 +220,12 @@
   /* A sheet opened to read a record wears .locked: same card layout, nothing live. */
   .sheet.locked .side-btn { pointer-events: none; }
   .sheet.locked .side-btn:not(.sel) { opacity: 0.4; }
-  .sheet.locked input, .sheet.locked textarea {
+  .sheet.locked input, .sheet.locked select, .sheet.locked textarea {
     background: var(--surface-2); border-color: var(--surface-2);
   }
-  input:disabled, textarea:disabled {
+  /* Reading a record, a list is just its value: no arrow inviting a tap. */
+  .sheet.locked select { -webkit-appearance: none; appearance: none; }
+  input:disabled, select:disabled, textarea:disabled {
     color: var(--text); opacity: 1; -webkit-text-fill-color: var(--text);
   }
 
@@ -447,11 +450,21 @@
     <h3 id="medTitle">Edit medicine</h3>
 
     <label for="mName">Medicine</label>
-    <input type="text" id="mName" placeholder="Ibuprofen" autocomplete="off" maxlength="60">
+    <select id="mName"></select>
+
+    <div id="mNameOtherWrap" hidden>
+      <label for="mNameOther">Which medicine?</label>
+      <input type="text" id="mNameOther" placeholder="Name it" autocomplete="off" maxlength="60">
+    </div>
 
     <div id="mDoseWrap">
       <label for="mDose">Dose</label>
-      <input type="text" id="mDose" placeholder="400 mg" autocomplete="off" maxlength="30">
+      <select id="mDose"></select>
+    </div>
+
+    <div id="mDoseOtherWrap" hidden>
+      <label for="mDoseOther">How much?</label>
+      <input type="text" id="mDoseOther" placeholder="Half a tablet" autocomplete="off" maxlength="30">
     </div>
 
     <div class="row-2">
@@ -524,11 +537,26 @@
   var BACKUP_NUDGE_MS = 10 * 86400000;
   var SIDE_NAME = { L: "Left", R: "Right", B: "Both" };
 
+  /* The medicine she takes is nearly always the same one, so both fields are
+     lists rather than boxes to type in: ibuprofen 400 mg is the form's opening
+     state and needs no typing at all. Anything not listed still goes in through
+     "Something else", and a name typed that way is stored like any other. */
+  var MED_NAMES = ["Ibuprofen", "Acetaminophen", "Naproxen", "Prenatal vitamin", "Stool softener"];
+  var MED_DOSES = ["200 mg", "400 mg", "600 mg", "800 mg", "1000 mg"];
+  var MED_NAME_DEFAULT = "Ibuprofen";
+  var MED_DOSE_DEFAULT = "400 mg";
+  var MED_OTHER = "__other__";
+
   /* What changed, newest first. The top entry is the version running, and it is
      what the menu shows — the quickest way to tell whether the phone has picked
      up an update yet. Add a new entry at the top whenever you ship, and bump
      CACHE in sw.js in the same commit. */
   var VERSIONS = [
+    { v: "1.10", date: "15 Aug 2026", notes: [
+      "The medicine form now picks from a list instead of typing: it opens on Ibuprofen 400 mg, so a usual dose is just Save.",
+      "Amounts go 200, 400, 600, 800, 1000 mg, with Not recorded if you'd rather not put one.",
+      "Anything not on the list goes in under Something else, and doses already logged still read exactly as they were."
+    ] },
     { v: "1.9", date: "15 Aug 2026", notes: [
       "Medicines: a card for logging what you take and when, with the last dose and how long ago at the top. Your recent medicines become one-tap buttons.",
       "Doses show in the timeline, count in today's totals, have their own filter, and go into the backup, the spreadsheet and the doctor's summary.",
@@ -1151,7 +1179,7 @@
     var sheet = $(scrimId).querySelector(".sheet");
     sheet.classList.toggle("locked", on);
 
-    var fields = sheet.querySelectorAll("input, textarea");
+    var fields = sheet.querySelectorAll("input, select, textarea");
     for (var i = 0; i < fields.length; i++) fields[i].disabled = on;
 
     $(opts.close).hidden = !on;
@@ -1468,6 +1496,42 @@
   var editingMedId = null;
   var medBaseMs = 0, medBaseKey = "";
 
+  function medOption(value, label) {
+    var o = document.createElement("option");
+    o.value = value;
+    o.textContent = label;
+    return o;
+  }
+
+  /* Fills a list, keeping whatever the record already says: a medicine written
+     down before this list existed — or restored from a backup, or still on a
+     quick button — becomes an option of its own, so opening a record can never
+     quietly rename it. */
+  function fillMedChoices(id, choices, value, blankLabel) {
+    var sel = $(id);
+    var all = value && choices.indexOf(value) < 0 ? [value].concat(choices) : choices;
+
+    sel.textContent = "";
+    if (blankLabel) sel.appendChild(medOption("", blankLabel));
+    all.forEach(function (v) { sel.appendChild(medOption(v, v)); });
+    sel.appendChild(medOption(MED_OTHER, "Something else…"));
+
+    sel.value = value;
+  }
+
+  function medChoice(selId, otherId) {
+    var picked = $(selId).value;
+    return picked === MED_OTHER ? $(otherId).value : picked;
+  }
+
+  /* The box to type in appears only while "Something else" is the choice, and
+     never while reading: the list itself carries the value then. */
+  function syncMedOther() {
+    var reading = $("medScrim").querySelector(".sheet").classList.contains("locked");
+    $("mNameOtherWrap").hidden = reading || $("mName").value !== MED_OTHER;
+    $("mDoseOtherWrap").hidden = reading || $("mDose").value !== MED_OTHER;
+  }
+
   function lockMed(on) {
     setLocked("medScrim", on, {
       close: "medClose", edit: "medEdit", cancel: "medCancel",
@@ -1476,6 +1540,7 @@
     });
     /* Reading a dose with no amount written down, the box would just be empty. */
     $("mDoseWrap").hidden = on && !$("mDose").value;
+    syncMedOther();
   }
 
   /* preset is { name, dose } when coming from the quick buttons: it fills the
@@ -1492,13 +1557,25 @@
     medBaseMs = m ? m.time : Date.now();
     medBaseKey = fillDateTime("mDate", "mTime", medBaseMs);
 
-    $("mName").value = m ? m.name : preset ? preset.name : "";
-    $("mDose").value = m ? m.dose : preset ? preset.dose : "";
+    /* Nothing chosen yet means the usual dose, so Save is the only tap needed. */
+    fillMedChoices("mName", MED_NAMES, m ? m.name : preset ? preset.name : MED_NAME_DEFAULT, "");
+    fillMedChoices("mDose", MED_DOSES, m ? m.dose : preset ? preset.dose : MED_DOSE_DEFAULT,
+      "Not recorded");
+    $("mNameOther").value = "";
+    $("mDoseOther").value = "";
     $("mNotes").value = m ? m.notes : "";
 
     lockMed(!!locked);
     $("medScrim").hidden = false;
   }
+
+  ["mName", "mDose"].forEach(function (id) {
+    $(id).addEventListener("change", function () {
+      syncMedOther();
+      var box = $(id === "mName" ? "mNameOther" : "mDoseOther");
+      if (!box.parentNode.hidden) box.focus();
+    });
+  });
 
   $("addMedBtn").addEventListener("click", function () { openMedEditor(null, null, false); });
   $("medClose").addEventListener("click", function () { $("medScrim").hidden = true; });
@@ -1518,8 +1595,8 @@
     var record = normalizeMed({
       id: editingMedId || newId(),
       time: time,
-      name: $("mName").value,
-      dose: $("mDose").value,
+      name: medChoice("mName", "mNameOther"),
+      dose: medChoice("mDose", "mDoseOther"),
       notes: $("mNotes").value.trim()
     });
     if (!record) { toast("Which medicine was it?"); return; }
