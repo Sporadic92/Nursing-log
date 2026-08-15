@@ -18,8 +18,12 @@ analytics, and no network dependency after first load.
 
 ## Branch
 
-Work on `claude/breastfeeding-tracker-android-hg00uu`. Do not push elsewhere without asking —
-Pages publishes from it, so a wrong push is a live change on a phone someone is relying on.
+Work on `claude/breastfeeding-tracker-android-hg00uu`, and **push straight to it — no need to
+ask, and no need for a pull request.** The owner has said so. Pages publishes from that branch,
+so a push is a live change on a phone someone is relying on: run the suite first, and don't
+push a change you haven't tested. If a session is handed a different branch to work on, finish
+there and then merge it here, still without asking. Anywhere else needs a reason.
+
 (The `-android-` in the name is vestigial: the project started as a Kotlin/Compose app and was
 abandoned within the hour because the owner has no Android Studio and needed it working the
 same day. Don't revive that approach.)
