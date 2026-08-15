@@ -1041,6 +1041,111 @@ check('section cleaned up after itself', await feedsNow() === before);
 await page.reload({ waitUntil: 'networkidle' });
 check('idle again', await page.isVisible('#idleView'));
 
+// ---------- an update from the other phone ----------
+/* The whole point of this feature is two phones, so the test uses two: his logs
+   a nappy and a dose, shares the message, and hers pastes it in. */
+const hisCtx = await browser.newContext({ viewport: { width: 412, height: 915 }, hasTouch: true });
+await hisCtx.addInitScript(() => {
+  window.NL_DIM_MS = 600000;
+  window.__shared = [];
+  Object.defineProperty(navigator, 'share', {
+    configurable: true,
+    value: d => { window.__shared.push(d); return Promise.resolve(); },
+  });
+});
+const hp = await hisCtx.newPage();
+await hp.goto(BASE, { waitUntil: 'networkidle' });
+
+await hp.click('#menuBtn');
+await hp.click('#exportUpdate');
+check('nothing to send from an empty log', (await hp.textContent('#toastText')).includes('Nothing logged'));
+await hp.click('#menuClose');
+
+// he logs a nappy and a feed of his own
+await hp.click('[data-diaper="both"]');
+await hp.fill('#dNotes', 'Leaked through');
+await hp.click('#diaperSave');
+await hp.click('[data-start="R"]');
+await hp.waitForTimeout(1200);
+await hp.click('#stopBtn');
+check('his phone has his two records', (await hp.$$('.entry')).length === 2);
+
+await hp.click('#menuBtn');
+await hp.click('#exportUpdate');
+const msg = await hp.evaluate(() => window.__shared[0] && window.__shared[0].text);
+check('the update goes out as a message', typeof msg === 'string');
+check('no file is attached', await hp.evaluate(() => !window.__shared[0].files));
+check('it says what it is', msg.includes('2 records'));
+check('it says what to do with it', msg.includes('Paste an update'));
+check('it carries the records', msg.includes('"diapers"') && msg.includes('"entries"'));
+check('ids are left out', !msg.includes('"id"'));
+check('empty notes are left out', (msg.match(/"notes":""/g) || []).length === 0);
+check('his note is carried', msg.includes('Leaked through'));
+check('it is small enough to text (' + msg.length + ' chars)', msg.length < 1200);
+check('the menu closes behind it', await hp.isHidden('#menuScrim'));
+
+// her phone: paste it in
+const hers = await feedsNow();
+const herNotes = await page.textContent('#history');
+await page.click('#menuBtn');
+await page.click('#importPaste');
+check('the paste sheet opens', await page.isVisible('#pasteScrim'));
+check('and the menu steps aside', await page.isHidden('#menuScrim'));
+await page.fill('#pasteBox', 'garbage, not a log at all');
+await page.click('#pasteImport');
+check('nonsense is refused', (await page.textContent('#toastText')).includes("doesn't look like"));
+check('and the sheet stays open to try again', await page.isVisible('#pasteScrim'));
+
+await page.fill('#pasteBox', msg);
+await page.click('#pasteImport');
+check('his records land in her log', await feedsNow() === hers + 2);
+check('she is told how many', (await page.textContent('#toastText')).includes('Added 2 records'));
+check('the sheet closes', await page.isHidden('#pasteScrim'));
+check('his note came with it', (await page.textContent('#history')).includes('Leaked through'));
+
+// pasting the same message again must be a no-op, since sends overlap by design
+await page.click('#menuBtn');
+await page.click('#importPaste');
+await page.fill('#pasteBox', msg);
+await page.click('#pasteImport');
+check('the same update twice adds nothing', await feedsNow() === hers + 2);
+check('and says so', (await page.textContent('#toastText')).includes('Nothing new'));
+
+// a record of hers must never be replaced by his version of it
+const mine = await page.evaluate(() => {
+  const d = JSON.parse(localStorage.getItem('nursinglog.diapers.v1'))[0];
+  return { time: d.time, pee: d.pee, poop: d.poop, notes: d.notes };
+});
+await page.click('#menuBtn');
+await page.click('#importPaste');
+await page.fill('#pasteBox', JSON.stringify({
+  app: 'nursing-log',
+  diapers: [{ time: mine.time, pee: mine.pee, poop: mine.poop, notes: 'HIS VERSION' }],
+}));
+await page.click('#pasteImport');
+check('a record she already has is left alone', await feedsNow() === hers + 2);
+check('her notes are not overwritten', await page.evaluate(() => {
+  return JSON.parse(localStorage.getItem('nursinglog.diapers.v1'))[0].notes;
+}) === mine.notes);
+check('nothing of his leaked in', !(await page.textContent('#history')).includes('HIS VERSION'));
+
+// the message survives being wrapped in whatever the messaging app adds
+await page.click('#menuBtn');
+await page.click('#importPaste');
+await page.fill('#pasteBox', 'Sent from my phone:\n\n' + msg + '\n\n— sent 9:42 PM');
+await page.click('#pasteImport');
+check('prose around the message is ignored', (await page.textContent('#toastText')).includes('Nothing new'));
+
+await hisCtx.close();
+
+// clean up the two records his phone contributed — one is a nappy, one a feed
+for (let i = 0; i < 4 && await feedsNow() > hers; i++) {
+  await openRow(0);
+  await page.click(await page.isVisible('#editorDelete') ? '#editorDelete' : '#diaperDelete');
+}
+check('her log is back to her own records', await feedsNow() === hers);
+check('and unchanged by all of it', await page.textContent('#history') === herNotes);
+
 // ---------- screen wake and dimming ----------
 const wake = () => page.evaluate(() => window.__wake);
 check('no wake lock while idle', !(await wake()).held);
@@ -1085,6 +1190,13 @@ await dim.click('#menuBtn');
 await dim.waitForTimeout(1400);
 check('does not dim over a sheet', !(await dim.isVisible('#dimVeil')));
 await dim.click('#menuClose');
+
+// pasting an update mid-feed is a real case too, and a veil would eat the paste
+await dim.click('#menuBtn');
+await dim.click('#importPaste');
+await dim.waitForTimeout(1400);
+check('does not dim over the paste sheet', !(await dim.isVisible('#dimVeil')));
+await dim.click('#pasteCancel');
 
 // looking something up mid-feed is what the basics are for, so no veil over them either
 await dim.click('#guideBtn');
@@ -1147,6 +1259,11 @@ await dp.reload({ waitUntil: 'networkidle' });   // the newest row may be a diap
 await dp.click('#guideBtn');
 await dp.$$eval('#guide summary', ns => ns[2].click());
 await dp.screenshot({ path: `${SHOTS}/guide-dark.png` });
+await dp.click('#guideClose');
+await dp.click('#menuBtn');
+await dp.screenshot({ path: `${SHOTS}/menu-dark.png` });
+await dp.click('#importPaste');
+await dp.screenshot({ path: `${SHOTS}/paste-dark.png` });
 await dark.close();
 
 await browser.close();

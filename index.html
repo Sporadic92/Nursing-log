@@ -546,6 +546,8 @@
     <button class="menu-item" id="exportCsv">Export spreadsheet (CSV)<small>Feedings and diapers, for Excel or Google Sheets</small></button>
     <button class="menu-item" id="exportJson">Save backup file<small id="exportJsonHint">Send it to Drive, email, or wherever you keep files</small></button>
     <button class="menu-item" id="importJson">Restore from backup<small>Adds anything missing from a backup file</small></button>
+    <button class="menu-item" id="exportUpdate">Send an update<small id="updateHint">The last few days as a message, to text to the other phone</small></button>
+    <button class="menu-item" id="importPaste">Paste an update<small>Add what the other phone sent — nothing of yours is changed</small></button>
     <button class="menu-item" id="whatsNew">What's new<small id="versionLine">Version</small></button>
     <button class="menu-item" id="aboutBtn">About this app<small>Where your data lives</small></button>
     <button class="menu-item" id="hapticsBtn">Vibration<small id="hapticsLine"></small></button>
@@ -553,6 +555,21 @@
       <button class="btn wide" id="menuClose">Close</button>
     </div>
     <input type="file" id="fileInput" accept="application/json,.json,text/plain,.txt" hidden>
+  </div>
+</div>
+
+<!-- Paste an update from the other phone -->
+<div class="scrim" id="pasteScrim" hidden>
+  <div class="sheet" role="dialog" aria-modal="true">
+    <h3>Paste an update</h3>
+    <p class="guide-note">Paste the whole message the other phone sent. Anything already in your
+      log stays exactly as it is — this only adds what's missing.</p>
+    <label for="pasteBox">The message</label>
+    <textarea id="pasteBox" rows="4" placeholder="Paste it here"></textarea>
+    <div class="sheet-actions">
+      <button class="btn" id="pasteCancel">Cancel</button>
+      <button class="btn primary" id="pasteImport">Add to my log</button>
+    </div>
   </div>
 </div>
 
@@ -717,6 +734,11 @@
      up an update yet. Add a new entry at the top whenever you ship, and bump
      CACHE in sw.js in the same commit. */
   var VERSIONS = [
+    { v: "1.13", date: "15 Aug 2026", notes: [
+      "Two phones, one log. Whoever logs a nappy or a feed can send the last few days as a text message, and the other phone adds them under Paste an update.",
+      "It only ever adds. Anything already in your log is left exactly as it was, so nothing you wrote can be overwritten by what arrives — and sending the same days twice changes nothing.",
+      "The full backup file works the same way if there's more to send than a message will carry."
+    ] },
     { v: "1.12", date: "15 Aug 2026", notes: [
       "Pause: a burp, a diaper change or a nap mid-feed no longer counts as time on the breast. Tap Resume, or tap a side to pick back up there.",
       "Stopped a feed by accident? The Saved message now offers Resume, and the timer comes back exactly where it was.",
@@ -2295,7 +2317,7 @@
   $("menuClose").addEventListener("click", function () { $("menuScrim").hidden = true; });
 
   [$("editorScrim"), $("diaperScrim"), $("medScrim"), $("menuScrim"), $("logScrim"),
-   $("guideScrim")].forEach(function (scrim) {
+   $("guideScrim"), $("pasteScrim")].forEach(function (scrim) {
     scrim.addEventListener("click", function (ev) {
       if (ev.target === scrim) scrim.hidden = true;
     });
@@ -2497,27 +2519,126 @@
 
   $("importJson").addEventListener("click", function () { $("fileInput").click(); });
 
-  $("fileInput").addEventListener("change", function () {
-    var file = this.files && this.files[0];
-    this.value = "";
-    if (!file) return;
+  /* ---------------- updates from the other phone ---------------- */
 
-    var reader = new FileReader();
-    reader.onload = function () {
-      var data;
-      try {
-        data = JSON.parse(reader.result);
-      } catch (err) {
-        toast("That file isn't a Nursing Log backup");
-        return;
-      }
+  /* Two phones, no server: he logs what he does on his, sends the last few days
+     as a message, and she pastes it in. It only ever adds, so her log is the one
+     that has everything and nothing she wrote can be replaced by what arrives.
+     Overlapping sends are the point — anything already there is skipped, so a
+     message that never gets read costs nothing. */
+  var UPDATE_DAYS = 3;
 
+  /* Stripped to what a record can't be rebuilt without: no ids (the other phone
+     mints its own, and matching is by content anyway), no empty notes, and no
+     end that normalizeFeed would work out for itself. Everything left out here
+     is something normalize puts back, which is what keeps this a plain backup
+     with fewer records in it rather than a second format. */
+  function compactFeed(e) {
+    var out = { start: e.start, leftSec: e.leftSec, rightSec: e.rightSec };
+    if (e.endSide) out.endSide = e.endSide;
+    if (feedEnd(e) !== e.start + (e.leftSec + e.rightSec) * 1000) out.end = feedEnd(e);
+    if (e.notes) out.notes = e.notes;
+    return out;
+  }
+
+  function compactDiaper(d) {
+    var out = { time: d.time, pee: d.pee, poop: d.poop };
+    if (d.size) out.size = d.size;
+    if (d.notes) out.notes = d.notes;
+    return out;
+  }
+
+  function compactMed(m) {
+    var out = { time: m.time, name: m.name };
+    if (m.dose) out.dose = m.dose;
+    if (m.notes) out.notes = m.notes;
+    return out;
+  }
+
+  function countText(n) {
+    return n + (n === 1 ? " record" : " records");
+  }
+
+  $("exportUpdate").addEventListener("click", function () {
+    var since = Date.now() - UPDATE_DAYS * 86400000;
+    var payload = {
+      app: "nursing-log",
+      version: 3,
+      exported: new Date().toISOString(),
+      entries: feeds.filter(function (e) { return e.start >= since; }).map(compactFeed),
+      diapers: diapers.filter(function (d) { return d.time >= since; }).map(compactDiaper),
+      meds: meds.filter(function (m) { return m.time >= since; }).map(compactMed)
+    };
+
+    var count = payload.entries.length + payload.diapers.length + payload.meds.length;
+    if (!count) { toast("Nothing logged in the last " + UPDATE_DAYS + " days"); return; }
+
+    shareText(
+      "Nursing Log — " + countText(count) + " from the last " + UPDATE_DAYS + " days.\n" +
+      "To add them: open Nursing Log, tap the gear, then Paste an update.\n\n" +
+      JSON.stringify(payload)
+    );
+    $("menuScrim").hidden = true;
+  });
+
+  /* Sent as a message rather than a file: an attachment has to be saved before
+     anything can open it, while a text can be copied straight out of the
+     conversation. The clipboard is the fallback where there is no share sheet. */
+  function shareText(text) {
+    if (navigator.share) {
+      navigator.share({ text: text }).then(function () {
+        toast("Update sent");
+      }).catch(function (err) {
+        if (err && err.name === "AbortError") return;   /* she backed out */
+        copyText(text);
+      });
+      return;
+    }
+    copyText(text);
+  }
+
+  function copyText(text) {
+    if (!navigator.clipboard || !navigator.clipboard.writeText) {
+      toast("This phone won't share or copy the update");
+      return;
+    }
+    navigator.clipboard.writeText(text).then(function () {
+      toast("Copied — paste it into a message");
+    }).catch(function () {
+      toast("This phone won't share or copy the update");
+    });
+  }
+
+  $("importPaste").addEventListener("click", function () {
+    $("pasteBox").value = "";
+    $("menuScrim").hidden = true;
+    $("pasteScrim").hidden = false;
+  });
+
+  $("pasteCancel").addEventListener("click", function () { $("pasteScrim").hidden = true; });
+
+  $("pasteImport").addEventListener("click", function () {
+    var data = readPayload($("pasteBox").value);
+    var added = data === null ? null : mergeRecords(data);
+    if (added === null) {
+      toast("That doesn't look like a Nursing Log update");
+      return;
+    }
+
+    $("pasteScrim").hidden = true;
+    renderAll();
+    toast(added ? "Added " + countText(added) : "Nothing new to add");
+  });
+
+  /* A backup arrives as a file, an update from the other phone arrives as a
+     message someone pasted in. Both are the same JSON, so both land here.
+     Returns the number of records added, or null if it isn't ours at all. */
+  function mergeRecords(data) {
       var inFeeds = Array.isArray(data) ? data : data.entries;
       var inDiapers = data.diapers;
       var inMeds = data.meds;
       if (!Array.isArray(inFeeds) && !Array.isArray(inDiapers) && !Array.isArray(inMeds)) {
-        toast("That file isn't a Nursing Log backup");
-        return;
+        return null;
       }
 
       var added = 0;
@@ -2570,12 +2691,47 @@
         saveMeds(mList);
       }
 
+      return added;
+  }
+
+  $("fileInput").addEventListener("change", function () {
+    var file = this.files && this.files[0];
+    this.value = "";
+    if (!file) return;
+
+    var reader = new FileReader();
+    reader.onload = function () {
+      var data = readPayload(reader.result);
+      var added = data === null ? null : mergeRecords(data);
+      if (added === null) {
+        toast("That file isn't a Nursing Log backup");
+        return;
+      }
+
       renderAll();
       $("menuScrim").hidden = true;
       toast(added ? "Restored " + added + " records" : "Nothing new to add");
     };
     reader.readAsText(file);
   });
+
+  /* A pasted update carries whatever the messaging app wrapped around it — the
+     line explaining what to do with it, at least. Take the outermost braces and
+     ignore the rest, so she can paste the message rather than part of it. */
+  function readPayload(text) {
+    var str = String(text == null ? "" : text);
+    try {
+      return JSON.parse(str);
+    } catch (err) { /* try again with the prose stripped */ }
+
+    var open = str.indexOf("{"), close = str.lastIndexOf("}");
+    if (open < 0 || close < open) return null;
+    try {
+      return JSON.parse(str.slice(open, close + 1));
+    } catch (err) {
+      return null;
+    }
+  }
 
   function renderVersionLog() {
     $("versionLine").textContent = "Version " + VERSION + " · what changed, and when";
@@ -2689,6 +2845,10 @@
     $("exportJsonHint").textContent = fileShareLikely()
       ? "Send it to Drive, email, or wherever you keep files"
       : "This browser saves it to Downloads — send it on from there";
+
+    $("updateHint").textContent = navigator.share
+      ? "The last " + UPDATE_DAYS + " days as a message, to text to the other phone"
+      : "Copies the last " + UPDATE_DAYS + " days, to paste into a message";
   }
 
   renderShareHint();
@@ -2749,7 +2909,8 @@
      exists for, and a veil dropping over it would eat the next tap. */
   function sheetOpen() {
     return !$("editorScrim").hidden || !$("diaperScrim").hidden || !$("medScrim").hidden ||
-      !$("menuScrim").hidden || !$("logScrim").hidden || !$("guideScrim").hidden;
+      !$("menuScrim").hidden || !$("logScrim").hidden || !$("guideScrim").hidden ||
+      !$("pasteScrim").hidden;
   }
 
   function paintVeil() {

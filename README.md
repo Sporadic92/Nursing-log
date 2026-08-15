@@ -160,6 +160,9 @@ Tap the **⚙** button in the top-right (next to the **?**) for:
   the shared copy is named `…json.txt`; that's the same file, and Restore reads it back fine.
 - **Restore from backup** — reads that file back in. It skips records already in the log, so
   restoring twice won't create duplicates.
+- **Send an update** — the last three days as a message, for texting to the other phone. See
+  below.
+- **Paste an update** — the other end of that: paste in what was texted to you.
 - **Vibration** — on or off. Tap the line to switch it.
 - **What's new** — the version running on this phone, and what changed in each one before it.
   Worth a look after an update: if the version at the top isn't the newest, the phone is still
@@ -168,6 +171,31 @@ Tap the **⚙** button in the top-right (next to the **?**) for:
 If it's been more than about ten days since the last backup, a small dot appears on the **⚙**
 button and the menu says how long it's been. That's the whole reminder — no banners, no popups.
 Backing up clears it.
+
+## Two phones, one log
+
+If both of you want to log things, run the app on both phones and send records over as a text.
+Her phone holds the real log; his sends what he recorded across.
+
+**On the phone that recorded something** — tap **⚙** → **Send an update**. That puts the last
+three days into a text message, ready to send to the other phone. It's a block of gibberish with
+a line above it explaining what it is; send the whole thing.
+
+**On the phone that keeps the log** — copy the message (long-press it → Copy), tap **⚙** →
+**Paste an update**, paste it in, and tap **Add to my log**.
+
+Three things worth knowing:
+
+- **It only ever adds.** Anything already in the log is left exactly as it is. Nothing you wrote
+  can be replaced by what arrives, and pasting the same message twice does nothing the second
+  time — it'll say "Nothing new to add".
+- **Sending the same days again is fine**, and is the point of sending three days each time: if
+  a message never gets read, the next one still carries those records.
+- **If you both log the same nappy, it'll show up twice.** There's no way for two phones to know
+  they mean the same one. Delete whichever you like — tap it, **Edit**, **Delete**.
+
+For anything bigger than a message will carry — a phone that's been logging for weeks — use
+**Save backup file** instead and send the file. Restoring it works the same way: it only adds.
 
 ## Making changes later
 
