@@ -382,7 +382,7 @@ await page.click('#menuBtn');
 const [csv] = await Promise.all([page.waitForEvent('download'), page.click('#exportCsv')]);
 const csvText = await (await csv.createReadStream()).toArray().then(b => Buffer.concat(b).toString());
 const csvRows = csvText.trim().split('\r\n');
-check('csv header', csvRows[0] === '"Date","Time","Type","Side","Left (min)","Right (min)","Total (min)","Ended on","Pee","Poop","Poop size","Notes"');
+check('csv header', csvRows[0] === '"Date","Time","Type","Side","Left (min)","Right (min)","Total (min)","Ended on","Pee","Poop","Poop size","Medicine","Dose","Notes"');
 check('csv records ending side', csvText.includes('"22","0","22","Left"'));
 check('csv row per record', csvRows.length === beforeReload + 1);
 check('csv has feeding rows', csvText.includes('"Feeding"'));
@@ -460,7 +460,7 @@ const [json] = await Promise.all([page.waitForEvent('download'), page.click('#ex
 const jsonPath = join(SHOTS, 'backup.json');
 await json.saveAs(jsonPath);
 const parsed = JSON.parse(await readFile(jsonPath, 'utf8'));
-check('backup version 2', parsed.version === 2);
+check('backup version 3', parsed.version === 3);
 check('backup has feeds', parsed.entries.length === 2);
 check('backup has diapers', parsed.diapers.length === 3);
 check('backup keeps poop size', parsed.diapers.some(d => d.size === 'S'));
@@ -494,6 +494,131 @@ await page.setInputFiles('#fileInput', jsonPath);
 await page.waitForTimeout(400);
 check('re-import adds nothing', (await page.$$('.entry')).length === beforeReload);
 check('no-op toast', (await page.textContent('#toastText')).includes('Nothing new'));
+
+// ---------- medicines ----------
+await page.click('[data-filter="meds"]');
+check('meds empty state', (await page.textContent('#history')).includes('No medicine recorded yet'));
+await page.click('[data-filter="all"]');
+check('the card invites a first dose',
+  (await page.textContent('#medSince')).includes('No medicine recorded yet'));
+
+const medButtons = () => page.$$eval('#medQuick .side-btn', ns => ns.map(n => n.textContent));
+check('one button before there is any history', (await medButtons()).length === 1);
+
+await page.click('#medQuick .side-btn');
+check('the button opens the editor', await page.isVisible('#medScrim'));
+check('opening it records nothing', await page.textContent('#statMeds') === '0');
+
+await page.click('#medSave');
+check('a dose with no medicine named is refused',
+  (await page.textContent('#toastText')).includes('Which medicine'));
+check('and the editor stays open', await page.isVisible('#medScrim'));
+
+await page.fill('#mName', 'Ibuprofen');
+await page.fill('#mDose', '400 mg');
+await page.fill('#mNotes', 'For afterpains');
+await page.click('#medSave');
+check('the dose saves', !(await page.isVisible('#medScrim')));
+check('doses today counts it', await page.textContent('#statMeds') === '1');
+check('the card shows the last dose', (await page.textContent('#medSince')).includes('Ibuprofen 400 mg'));
+check('the card says how long ago', (await page.textContent('#medSince')).includes('just now'));
+check('the timeline shows the medicine', (await page.textContent('#history')).includes('Ibuprofen'));
+check('and the amount under it', (await page.textContent('#history')).includes('400 mg'));
+check('day totals count the dose', (await page.textContent('h2.day')).includes('1 dose'));
+
+const quick = await medButtons();
+check('a medicine taken becomes a one-tap button',
+  quick.some(t => t.includes('Ibuprofen') && t.includes('400 mg')));
+check('with a way to log something else', quick.some(t => /Something else|Other/.test(t)));
+
+await page.click('#medQuick .side-btn');
+check('a repeat dose comes prefilled',
+  await page.inputValue('#mName') === 'Ibuprofen' && await page.inputValue('#mDose') === '400 mg');
+await page.click('#medCancel');
+check('cancelling a repeat records nothing', await page.textContent('#statMeds') === '1');
+await page.screenshot({ path: join(SHOTS, 'medicine-card.png') });
+
+// reading a dose must not be able to change it
+await page.click('[data-filter="meds"]');
+await (await page.$$('.entry'))[0].click();
+check('a dose row opens locked',
+  await page.$eval('#medScrim .sheet', n => n.classList.contains('locked')));
+check('its fields are disabled',
+  await page.$$eval('#medScrim input, #medScrim textarea', ns => ns.every(n => n.disabled)));
+check('reading a dose offers Close and Edit',
+  await page.isVisible('#medClose') && await page.isVisible('#medEdit'));
+check('no delete while reading a dose', !(await page.isVisible('#medDelete')));
+await page.screenshot({ path: join(SHOTS, 'medicine-locked.png') });
+
+await page.click('#medEdit');
+check('Edit unlocks the dose',
+  !(await page.$eval('#medScrim .sheet', n => n.classList.contains('locked'))));
+check('delete appears once editing', await page.isVisible('#medDelete'));
+await page.fill('#mDose', '200 mg');
+await page.click('#medSave');
+check('the edit sticks', (await page.textContent('#medSince')).includes('200 mg'));
+
+// the date/time gotcha: editing the notes must not shift the dose backwards
+const doseRow = () => page.textContent('.entry .time');
+const doseAt = await doseRow();
+await (await page.$$('.entry'))[0].click();
+await page.click('#medEdit');
+await page.fill('#mNotes', 'With food');
+await page.click('#medSave');
+check('editing a dose leaves its time alone', await doseRow() === doseAt);
+
+// an amount is optional, and an empty box says nothing while reading
+await page.click('#addMedBtn');
+await page.fill('#mName', 'Paracetamol');
+await page.click('#medSave');
+check('a dose with no amount is fine', (await page.$$('.entry')).length === 2);
+await (await page.$$('.entry'))[0].click();
+check('the empty amount is hidden while reading', !(await page.isVisible('#mDoseWrap')));
+await page.click('#medClose');
+
+check('two medicines make two buttons', (await medButtons()).length === 3);
+
+// backup carries doses, and restoring twice does not duplicate them
+await page.click('#menuBtn');
+const [medJson] = await Promise.all([page.waitForEvent('download'), page.click('#exportJson')]);
+const medPath = join(SHOTS, 'meds-backup.json');
+await medJson.saveAs(medPath);
+const medParsed = JSON.parse(await readFile(medPath, 'utf8'));
+check('the backup carries medicines', medParsed.meds.length === 2);
+check('with what was taken', medParsed.meds.some(m => m.name === 'Ibuprofen' && m.dose === '200 mg'));
+
+await (await page.$$('.entry'))[0].click();
+await page.click('#medEdit');
+await page.click('#medDelete');
+check('a dose deletes', (await page.$$('.entry')).length === 1);
+check('deleting a dose offers undo', await page.isVisible('#toastAction'));
+await page.click('#toastAction');
+check('undo brings the dose back', (await page.$$('.entry')).length === 2);
+
+await page.click('#menuBtn');
+await page.setInputFiles('#fileInput', medPath);
+await page.waitForTimeout(400);
+check('restoring the same doses adds nothing',
+  (await page.textContent('#toastText')).includes('Nothing new'));
+check('and leaves the count alone', (await page.$$('.entry')).length === 2);
+
+await page.click('#menuBtn');
+const [medCsv] = await Promise.all([page.waitForEvent('download'), page.click('#exportCsv')]);
+const medCsvText = await (await medCsv.createReadStream()).toArray().then(b => Buffer.concat(b).toString());
+check('the spreadsheet has a medicine row', medCsvText.includes('"Medicine"'));
+check('with the name and amount in their columns', medCsvText.includes('"Ibuprofen","200 mg"'));
+
+await page.click('#menuBtn');
+const [medPdf] = await Promise.all([page.waitForEvent('download'), page.click('#exportPdf')]);
+const medPdfPath = join(SHOTS, 'summary-meds.pdf');
+await medPdf.saveAs(medPdfPath);
+const medPdfText = (await readFile(medPdfPath)).toString('latin1');
+check('the doctor\'s summary lists doses', medPdfText.includes('Ibuprofen 200 mg'));
+check('and says so in the heading', medPdfText.includes('Notes & medicines'));
+
+await page.click('[data-filter="all"]');
+check('the timeline shows feeds, diapers and doses together',
+  (await page.$$('.entry')).length > 2);
 
 // ---------- version log ----------
 await page.click('#menuBtn');
@@ -755,9 +880,10 @@ await dimCtx.close();
 
 // ---------- PWA ----------
 check('service worker active', await page.evaluate(() => navigator.serviceWorker.ready.then(r => !!r.active).catch(() => false)));
+const beforeOffline = (await page.$$('.entry')).length;   // whatever the log holds by now
 await ctx.setOffline(true);
 await page.reload({ waitUntil: 'load' });
-check('works offline', await page.isVisible('#idleView') && (await page.$$('.entry')).length === beforeReload);
+check('works offline', await page.isVisible('#idleView') && (await page.$$('.entry')).length === beforeOffline);
 await ctx.setOffline(false);
 check('no horizontal scroll', !(await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1)));
 

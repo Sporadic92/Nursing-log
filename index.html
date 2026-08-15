@@ -23,6 +23,7 @@
     --both: #6f8f6a;
     --pee: #c99a2e;
     --poop: #8a6a4f;
+    --med: #6f6a9c;
     --danger: #b3261e;
     --radius: 18px;
     --safe-bottom: env(safe-area-inset-bottom, 0px);
@@ -42,6 +43,7 @@
       --both: #a3c69c;
       --pee: #e8c56a;
       --poop: #c0a184;
+      --med: #b3accf;
       --danger: #f2b8b5;
     }
   }
@@ -96,6 +98,8 @@
 
   .row-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
   .row-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
+  .row-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+  .row-4 .side-btn { font-size: 15px; padding: 16px 2px; }
 
   .side-btn {
     border: 1px solid var(--line); background: var(--surface-2); color: var(--text);
@@ -103,6 +107,9 @@
     cursor: pointer; display: grid; gap: 3px; place-items: center; font-family: inherit;
   }
   .side-btn small { font-weight: 400; font-size: 12px; color: var(--muted); }
+  .side-btn .med-name {
+    max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
   .side-btn:active { transform: scale(0.98); }
   .side-btn.sel { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
   .side-btn.sel small { color: var(--accent); }
@@ -142,10 +149,14 @@
     color: var(--muted); margin-bottom: 10px; text-align: center;
   }
 
-  .stats { display: grid; grid-template-columns: 1fr 1fr 1fr; text-align: center; }
+  .stats { display: grid; grid-template-columns: repeat(4, 1fr); text-align: center; }
+  .stats-head {
+    font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em;
+    color: var(--muted); text-align: center; margin-bottom: 12px;
+  }
   .stats div + div { border-left: 1px solid var(--line); }
   .stats .n { font-size: 22px; font-weight: 650; font-variant-numeric: tabular-nums; }
-  .stats .l { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
+  .stats .l { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
 
   h2.day {
     font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em;
@@ -172,6 +183,7 @@
   .pill.pee { background: var(--pee); font-size: 18px; }
   .pill.poop { background: var(--poop); font-size: 18px; }
   .pill.both-d { background: var(--poop); font-size: 13px; }
+  .pill.med { background: var(--med); font-size: 18px; }
   .entry .meta { flex: 1; min-width: 0; }
   .entry .time { font-weight: 600; }
   .entry .sub { font-size: 13px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -188,7 +200,7 @@
   }
   .sheet h3 { margin: 0 0 16px; font-size: 18px; }
   label { display: block; font-size: 13px; color: var(--muted); margin: 14px 0 6px; }
-  input[type="date"], input[type="time"], input[type="number"], textarea {
+  input[type="date"], input[type="time"], input[type="number"], input[type="text"], textarea {
     width: 100%; font: inherit; color: var(--text); background: var(--surface);
     border: 1px solid var(--line); border-radius: 12px; padding: 13px 12px;
   }
@@ -309,17 +321,30 @@
     <button class="text-btn" id="addDiaperBtn">+ Add a past diaper</button>
   </section>
 
-  <!-- Today -->
-  <section class="card stats">
-    <div><div class="n" id="statCount">0</div><div class="l">Feeds today</div></div>
-    <div><div class="n" id="statMinutes">0</div><div class="l">Minutes</div></div>
-    <div><div class="n" id="statDiapers">0</div><div class="l">Diapers</div></div>
+  <!-- Medicines -->
+  <section class="card">
+    <div class="since" id="medSince">No medicine recorded yet</div>
+    <div class="prompt">Log a medicine</div>
+    <div class="row-2" id="medQuick"></div>
+    <button class="text-btn" id="addMedBtn">+ Add a past dose</button>
   </section>
 
-  <div class="row-3" id="filterRow">
+  <!-- Today -->
+  <section class="card">
+    <div class="stats-head">Today</div>
+    <div class="stats">
+    <div><div class="n" id="statCount">0</div><div class="l">Feeds</div></div>
+    <div><div class="n" id="statMinutes">0</div><div class="l">Minutes</div></div>
+    <div><div class="n" id="statDiapers">0</div><div class="l">Diapers</div></div>
+    <div><div class="n" id="statMeds">0</div><div class="l">Doses</div></div>
+    </div>
+  </section>
+
+  <div class="row-4" id="filterRow">
     <button class="side-btn filter" data-filter="all">All</button>
     <button class="side-btn filter" data-filter="feeds">Feeds</button>
     <button class="side-btn filter" data-filter="diapers">Diapers</button>
+    <button class="side-btn filter" data-filter="meds">Meds</button>
   </div>
 
   <div id="history"></div>
@@ -416,6 +441,39 @@
   </div>
 </div>
 
+<!-- Medicine editor -->
+<div class="scrim" id="medScrim" hidden>
+  <div class="sheet" role="dialog" aria-modal="true">
+    <h3 id="medTitle">Edit medicine</h3>
+
+    <label for="mName">Medicine</label>
+    <input type="text" id="mName" placeholder="Ibuprofen" autocomplete="off" maxlength="60">
+
+    <div id="mDoseWrap">
+      <label for="mDose">Dose</label>
+      <input type="text" id="mDose" placeholder="400 mg" autocomplete="off" maxlength="30">
+    </div>
+
+    <div class="row-2">
+      <div><label for="mDate">Date</label><input type="date" id="mDate"></div>
+      <div><label for="mTime">Time</label><input type="time" id="mTime"></div>
+    </div>
+
+    <div id="mNotesWrap">
+      <label for="mNotes">Notes</label>
+      <textarea id="mNotes" placeholder="With food, for afterpains&hellip;"></textarea>
+    </div>
+
+    <div class="sheet-actions">
+      <button class="btn" id="medClose" hidden>Close</button>
+      <button class="btn primary" id="medEdit" hidden>Edit</button>
+      <button class="btn" id="medCancel">Cancel</button>
+      <button class="btn primary" id="medSave">Save</button>
+      <button class="btn danger wide" id="medDelete" hidden>Delete this dose</button>
+    </div>
+  </div>
+</div>
+
 <!-- Menu -->
 <div class="scrim" id="menuScrim" hidden>
   <div class="sheet" role="dialog" aria-modal="true">
@@ -423,7 +481,7 @@
     <p class="backup-status" id="backupStatus"></p>
     <button class="menu-item" id="exportPdf">Summary for the doctor (PDF)<small>Last two weeks on a page, ready to share</small></button>
     <button class="menu-item" id="exportCsv">Export spreadsheet (CSV)<small>Feedings and diapers, for Excel or Google Sheets</small></button>
-    <button class="menu-item" id="exportJson">Save backup file<small>Send it to Drive, email, or wherever you keep files</small></button>
+    <button class="menu-item" id="exportJson">Save backup file<small id="exportJsonHint">Send it to Drive, email, or wherever you keep files</small></button>
     <button class="menu-item" id="importJson">Restore from backup<small>Adds anything missing from a backup file</small></button>
     <button class="menu-item" id="whatsNew">What's new<small id="versionLine">Version</small></button>
     <button class="menu-item" id="aboutBtn">About this app<small>Where your data lives</small></button>
@@ -459,6 +517,7 @@
 
   var FEEDS_KEY = "nursinglog.entries.v1";
   var DIAPERS_KEY = "nursinglog.diapers.v1";
+  var MEDS_KEY = "nursinglog.meds.v1";
   var ACTIVE_KEY = "nursinglog.active.v1";
   var FILTER_KEY = "nursinglog.filter.v1";
   var BACKUP_KEY = "nursinglog.backup.v1";
@@ -470,6 +529,11 @@
      up an update yet. Add a new entry at the top whenever you ship, and bump
      CACHE in sw.js in the same commit. */
   var VERSIONS = [
+    { v: "1.9", date: "15 Aug 2026", notes: [
+      "Medicines: a card for logging what you take and when, with the last dose and how long ago at the top. Your recent medicines become one-tap buttons.",
+      "Doses show in the timeline, count in today's totals, have their own filter, and go into the backup, the spreadsheet and the doctor's summary.",
+      "If a phone won't offer the share sheet, the backup line now says so instead of a download looking like a failure."
+    ] },
     { v: "1.8", date: "15 Aug 2026", notes: [
       "Saving a backup opens the share sheet again, so it can go to Drive. Chrome refuses a .json file, so the shared copy is named .json.txt — Restore reads it either way.",
       "Backups and exports are named with the time as well as the date, so a second backup on the same day doesn't overwrite the first.",
@@ -613,8 +677,24 @@
     }
   }
 
+  /* A dose is { id, time, name, dose, notes }. Nothing identifies a dose except
+     what was taken, so a record with no name is not a record. */
+  function normalizeMed(m) {
+    if (!m || typeof m.time !== "number") return null;
+    var name = typeof m.name === "string" ? m.name.trim() : "";
+    if (!name) return null;
+    return {
+      id: m.id || newId(),
+      time: m.time,
+      name: name.slice(0, 60),
+      dose: typeof m.dose === "string" ? m.dose.trim().slice(0, 30) : "",
+      notes: typeof m.notes === "string" ? m.notes : ""
+    };
+  }
+
   function loadFeeds() { return readList(FEEDS_KEY, normalizeFeed); }
   function loadDiapers() { return readList(DIAPERS_KEY, normalizeDiaper); }
+  function loadMeds() { return readList(MEDS_KEY, normalizeMed); }
 
   function saveFeeds(list) {
     list.sort(function (a, b) { return b.start - a.start; });
@@ -626,6 +706,12 @@
     list.sort(function (a, b) { return b.time - a.time; });
     diapers = list;
     writeList(DIAPERS_KEY, list);
+  }
+
+  function saveMeds(list) {
+    list.sort(function (a, b) { return b.time - a.time; });
+    meds = list;
+    writeList(MEDS_KEY, list);
   }
 
   /* Active session: { start, side, leftSec, rightSec, segStart }.
@@ -654,9 +740,10 @@
 
   var feeds = loadFeeds();
   var diapers = loadDiapers();
+  var meds = loadMeds();
   var active = loadActive();
   var filter = localStorage.getItem(FILTER_KEY) || "all";
-  if (filter !== "feeds" && filter !== "diapers") filter = "all";
+  if (filter !== "feeds" && filter !== "diapers" && filter !== "meds") filter = "all";
 
   /* ---------------- formatting ---------------- */
 
@@ -777,9 +864,73 @@
       : "No diapers recorded yet";
   }
 
+  function medLabel(m) {
+    return m.dose ? m.name + " " + m.dose : m.name;
+  }
+
+  /* The two most recent medicines, so a repeat dose is one tap. Distinct by
+     name and dose together: 200 mg and 400 mg are not the same button. */
+  function recentMeds() {
+    var seen = {}, out = [];
+    for (var i = 0; i < meds.length && out.length < 2; i++) {
+      var key = meds[i].name.toLowerCase() + "|" + meds[i].dose.toLowerCase();
+      if (seen[key]) continue;
+      seen[key] = true;
+      out.push({ name: meds[i].name, dose: meds[i].dose });
+    }
+    return out;
+  }
+
+  function renderMedCard() {
+    /* She names the medicine, so this line is built rather than interpolated. */
+    var last = meds[0];
+    var since = $("medSince");
+    since.textContent = "";
+    if (last) {
+      var ago = document.createElement("b");
+      ago.textContent = agoText(last.time);
+      since.appendChild(document.createTextNode("Last dose "));
+      since.appendChild(ago);
+      since.appendChild(document.createTextNode(" · " + medLabel(last)));
+    } else {
+      since.textContent = "No medicine recorded yet";
+    }
+
+    var host = $("medQuick");
+    host.textContent = "";
+
+    var recent = recentMeds();
+    host.className = recent.length > 1 ? "row-3" : "row-2";
+
+    recent.forEach(function (m) {
+      var btn = document.createElement("button");
+      btn.className = "side-btn";
+      btn.type = "button";
+      var name = document.createElement("span");
+      name.className = "med-name";
+      name.textContent = m.name;
+      btn.appendChild(name);
+      if (m.dose) {
+        var dose = document.createElement("small");
+        dose.textContent = m.dose;
+        btn.appendChild(dose);
+      }
+      btn.addEventListener("click", function () { openMedEditor(null, m, false); });
+      host.appendChild(btn);
+    });
+
+    var other = document.createElement("button");
+    other.className = "side-btn";
+    other.type = "button";
+    other.textContent = !recent.length ? "Log a medicine"
+      : recent.length > 1 ? "Other" : "Something else";
+    other.addEventListener("click", function () { openMedEditor(null, null, false); });
+    host.appendChild(other);
+  }
+
   function renderStats() {
     var today = dayKey(Date.now());
-    var count = 0, minutes = 0, dcount = 0;
+    var count = 0, minutes = 0, dcount = 0, mcount = 0;
 
     feeds.forEach(function (e) {
       if (dayKey(e.start) === today) { count++; minutes += feedMinutes(e); }
@@ -787,10 +938,14 @@
     diapers.forEach(function (d) {
       if (dayKey(d.time) === today) dcount++;
     });
+    meds.forEach(function (m) {
+      if (dayKey(m.time) === today) mcount++;
+    });
 
     $("statCount").textContent = count;
     $("statMinutes").textContent = minutes;
     $("statDiapers").textContent = dcount;
+    $("statMeds").textContent = mcount;
   }
 
   function feedSubText(e) {
@@ -807,11 +962,14 @@
     host.textContent = "";
 
     var items = [];
-    if (filter !== "diapers") {
+    if (filter === "all" || filter === "feeds") {
       feeds.forEach(function (e) { items.push({ kind: "feed", at: e.start, data: e }); });
     }
-    if (filter !== "feeds") {
+    if (filter === "all" || filter === "diapers") {
       diapers.forEach(function (d) { items.push({ kind: "diaper", at: d.time, data: d }); });
+    }
+    if (filter === "all" || filter === "meds") {
+      meds.forEach(function (m) { items.push({ kind: "med", at: m.time, data: m }); });
     }
     items.sort(function (a, b) { return b.at - a.at; });
 
@@ -822,7 +980,8 @@
       p.className = "empty";
       p.textContent = filter === "feeds" ? "No feedings recorded yet."
         : filter === "diapers" ? "No diapers recorded yet."
-        : "Feedings and diapers you record will show up here.";
+        : filter === "meds" ? "No medicine recorded yet."
+        : "Feedings, diapers and medicines you record will show up here.";
       host.appendChild(p);
       return;
     }
@@ -835,10 +994,11 @@
       if (key !== currentDay) {
         currentDay = key;
 
-        var fCount = 0, fMin = 0, dCount = 0;
+        var fCount = 0, fMin = 0, dCount = 0, mCount = 0;
         items.forEach(function (x) {
           if (dayKey(x.at) !== key) return;
           if (x.kind === "feed") { fCount++; fMin += feedMinutes(x.data); }
+          else if (x.kind === "med") mCount++;
           else dCount++;
         });
 
@@ -850,6 +1010,7 @@
         var parts = [];
         if (fCount) parts.push(fCount + (fCount === 1 ? " feed" : " feeds") + " · " + fMin + " min");
         if (dCount) parts.push(dCount + (dCount === 1 ? " diaper" : " diapers"));
+        if (mCount) parts.push(mCount + (mCount === 1 ? " dose" : " doses"));
         sum.textContent = parts.join(" · ");
         h.appendChild(name);
         h.appendChild(sum);
@@ -875,6 +1036,13 @@
         line1.textContent = clockTime(e.start) + " · " + durationText(feedMinutes(e));
         line2.textContent = feedSubText(e);
         row.addEventListener("click", function () { openFeedEditor(e.id, true); });
+      } else if (item.kind === "med") {
+        var m = item.data;
+        pill.className = "pill med";
+        pill.textContent = "💊";
+        line1.textContent = clockTime(m.time) + " · " + m.name;
+        line2.textContent = m.dose || "Medicine";
+        row.addEventListener("click", function () { openMedEditor(m.id, null, true); });
       } else {
         var d = item.data;
         pill.className = "pill " + (d.pee && d.poop ? "both-d" : d.poop ? "poop" : "pee");
@@ -903,6 +1071,7 @@
   function renderAll() {
     renderFeedCard();
     renderDiaperCard();
+    renderMedCard();
     renderStats();
     renderHistory();
     renderBackupStatus();
@@ -1294,6 +1463,93 @@
     });
   });
 
+  /* ---------------- medicine editor ---------------- */
+
+  var editingMedId = null;
+  var medBaseMs = 0, medBaseKey = "";
+
+  function lockMed(on) {
+    setLocked("medScrim", on, {
+      close: "medClose", edit: "medEdit", cancel: "medCancel",
+      save: "medSave", del: "medDelete",
+      notes: "mNotesWrap", notesField: "mNotes", existing: !!editingMedId
+    });
+    /* Reading a dose with no amount written down, the box would just be empty. */
+    $("mDoseWrap").hidden = on && !$("mDose").value;
+  }
+
+  /* preset is { name, dose } when coming from the quick buttons: it fills the
+     form, it does not record anything. */
+  function openMedEditor(id, preset, locked) {
+    var m = findById(meds, "id", id);
+
+    editingMedId = m ? m.id : null;
+
+    $("medTitle").textContent = !m ? (preset ? "Log a medicine" : "Add a dose")
+      : locked ? "Medicine"
+      : "Edit medicine";
+
+    medBaseMs = m ? m.time : Date.now();
+    medBaseKey = fillDateTime("mDate", "mTime", medBaseMs);
+
+    $("mName").value = m ? m.name : preset ? preset.name : "";
+    $("mDose").value = m ? m.dose : preset ? preset.dose : "";
+    $("mNotes").value = m ? m.notes : "";
+
+    lockMed(!!locked);
+    $("medScrim").hidden = false;
+  }
+
+  $("addMedBtn").addEventListener("click", function () { openMedEditor(null, null, false); });
+  $("medClose").addEventListener("click", function () { $("medScrim").hidden = true; });
+  $("medCancel").addEventListener("click", function () { $("medScrim").hidden = true; });
+
+  $("medEdit").addEventListener("click", function () {
+    $("medTitle").textContent = "Edit medicine";
+    lockMed(false);
+  });
+
+  $("medSave").addEventListener("click", function () {
+    var time = fieldsKey("mDate", "mTime") === medBaseKey
+      ? medBaseMs
+      : readDateTime("mDate", "mTime");
+    if (time === null) { toast("Please set a date and time"); return; }
+
+    var record = normalizeMed({
+      id: editingMedId || newId(),
+      time: time,
+      name: $("mName").value,
+      dose: $("mDose").value,
+      notes: $("mNotes").value.trim()
+    });
+    if (!record) { toast("Which medicine was it?"); return; }
+
+    var list = meds.filter(function (m) { return m.id !== editingMedId; });
+    list.push(record);
+    saveMeds(list);
+
+    $("medScrim").hidden = true;
+    renderAll();
+    toast("Saved");
+  });
+
+  $("medDelete").addEventListener("click", function () {
+    var gone = findById(meds, "id", editingMedId);
+    if (!gone) return;
+
+    saveMeds(meds.filter(function (m) { return m.id !== gone.id; }));
+    $("medScrim").hidden = true;
+    renderAll();
+
+    toast("Dose deleted", function () {
+      var list = meds.slice();
+      list.push(gone);
+      saveMeds(list);
+      renderAll();
+      toast("Dose restored");
+    });
+  });
+
   /* ---------------- doctor's summary (PDF) ---------------- */
 
   /* A PDF is just text, so this writes one directly rather than pulling in a
@@ -1310,6 +1566,7 @@
   var RULE = [0.86, 0.82, 0.84];
   var TINT = [0.965, 0.945, 0.953];
   var COOL = [0.42, 0.55, 0.68];
+  var MED = [0.44, 0.42, 0.61];
 
   function pdfNum(n) { return String(Math.round(n * 100) / 100); }
 
@@ -1588,7 +1845,9 @@
     return lines;
   }
 
-  function notesInRange(data) {
+  /* Notes and doses share page two. A dose earns its place whether or not
+     anything was written alongside it — what was taken and when is the point. */
+  function notesAndDoses(data) {
     var out = [];
     feeds.forEach(function (e) {
       if (e.notes && e.start >= data.from && e.start <= data.to) {
@@ -1600,6 +1859,13 @@
         out.push({ at: x.time, kind: "Diaper", text: x.notes });
       }
     });
+    meds.forEach(function (m) {
+      if (m.time < data.from || m.time > data.to) return;
+      out.push({
+        at: m.time, kind: "Medicine",
+        text: m.notes ? medLabel(m) + " - " + m.notes : medLabel(m)
+      });
+    });
     out.sort(function (a, b) { return a.at - b.at; });
     return out;
   }
@@ -1608,8 +1874,9 @@
     var right = PDF_W - PDF_M;
     put(page, PDF_M, 52, "NURSING LOG", { size: 8, bold: true, color: ACCENT });
     put(page, right, 52, "Page 2", { size: 8, color: MUTED, align: "right" });
-    put(page, PDF_M, 76, "Notes", { size: 19, bold: true });
-    put(page, PDF_M, 92, "Anything written down alongside a feeding or a change", { size: 9.5, color: MUTED });
+    put(page, PDF_M, 76, "Notes & medicines", { size: 19, bold: true });
+    put(page, PDF_M, 92, "Doses taken, and anything written alongside a feeding or a change",
+      { size: 9.5, color: MUTED });
     rule(page, PDF_M, 104, right, RULE);
 
     var y = 128, textX = PDF_M + 116, wrapW = right - textX;
@@ -1617,12 +1884,13 @@
       var lines = wrapText(notes[i].text, wrapW, 9);
       var blockH = Math.max(lines.length * 12, 14);
       if (y + blockH > PDF_H - 70) {
-        put(page, PDF_M, y + 6, "Earlier notes not shown - the full log is in the spreadsheet export.",
+        put(page, PDF_M, y + 6, "Later entries not shown - the full log is in the spreadsheet export.",
           { size: 8.5, color: MUTED });
         break;
       }
       put(page, PDF_M, y, shortDay(notes[i].at) + ", " + clockTime(notes[i].at), { size: 8.5, color: MUTED });
-      put(page, PDF_M, y + 12, notes[i].kind, { size: 8, color: notes[i].kind === "Diaper" ? COOL : ACCENT });
+      put(page, PDF_M, y + 12, notes[i].kind,
+        { size: 8, color: notes[i].kind === "Diaper" ? COOL : notes[i].kind === "Medicine" ? MED : ACCENT });
       for (var l = 0; l < lines.length; l++) put(page, textX, y + l * 12, lines[l], { size: 9 });
       y += blockH + 12;
     }
@@ -1638,7 +1906,7 @@
 
   function buildSummaryPdf() {
     var data = summarise(REPORT_DAYS);
-    var notes = notesInRange(data);
+    var notes = notesAndDoses(data);
     var pages = [];
 
     var one = pdfPage();
@@ -1670,7 +1938,7 @@
   $("menuBtn").addEventListener("click", function () { $("menuScrim").hidden = false; });
   $("menuClose").addEventListener("click", function () { $("menuScrim").hidden = true; });
 
-  [$("editorScrim"), $("diaperScrim"), $("menuScrim"), $("logScrim")].forEach(function (scrim) {
+  [$("editorScrim"), $("diaperScrim"), $("medScrim"), $("menuScrim"), $("logScrim")].forEach(function (scrim) {
     scrim.addEventListener("click", function (ev) {
       if (ev.target === scrim) scrim.hidden = true;
     });
@@ -1698,21 +1966,39 @@
      isn't on it, so a backup slid silently into Downloads instead of offering
      Drive. The same bytes named .txt go through, and restore reads the contents
      rather than the extension. PDFs and CSVs are on the list already. */
-  function shareableFile(filename, blob, mime) {
-    if (!navigator.share || !navigator.canShare) return null;
+  function makeFile(filename, blob, mime) {
+    try { return new File([blob], filename, { type: mime }); } catch (err) { return null; }
+  }
+
+  /* Picks the name most likely to be accepted, or null if files can't be shared
+     at all. Browsers that have share() but no canShare() can't be asked in
+     advance — offering the file and letting it fail beats never opening the
+     sheet, which is what an over-careful guard did here before. */
+  function shareCandidate(filename, blob, mime) {
+    if (!navigator.share) return null;
+
+    var textual = /^(text\/|application\/json)/.test(mime || "");
+    var asText = textual ? makeFile(filename + ".txt", blob, "text/plain") : null;
+    var asIs = makeFile(filename, blob, mime);
+
+    if (!navigator.canShare) return asText || asIs;
+
     try {
-      var file = new File([blob], filename, { type: mime });
-      return navigator.canShare({ files: [file] }) ? file : null;
-    } catch (err) {
-      return null;
-    }
+      if (asIs && navigator.canShare({ files: [asIs] })) return asIs;
+      if (asText && navigator.canShare({ files: [asText] })) return asText;
+    } catch (err) { /* read as a no */ }
+    return null;
+  }
+
+  /* Same question the export asks, so the wording on screen can't drift from
+     what actually happens. */
+  function fileShareLikely() {
+    return !!shareCandidate("probe.json", new Blob(["{}"], { type: "application/json" }),
+      "application/json");
   }
 
   function shareBlob(filename, blob, mime, onKept) {
-    var file = shareableFile(filename, blob, mime);
-    if (!file && /^(text\/|application\/json)/.test(mime || "")) {
-      file = shareableFile(filename + ".txt", blob, "text/plain");
-    }
+    var file = shareCandidate(filename, blob, mime);
 
     if (file) {
       navigator.share({ files: [file] }).then(function () {
@@ -1803,11 +2089,12 @@
   $("exportCsv").addEventListener("click", function () {
     if (!feeds.length && !diapers.length) { toast("Nothing to export yet"); return; }
 
-    var rows = [["Date", "Time", "Type", "Side", "Left (min)", "Right (min)", "Total (min)", "Ended on", "Pee", "Poop", "Poop size", "Notes"]];
+    var rows = [["Date", "Time", "Type", "Side", "Left (min)", "Right (min)", "Total (min)", "Ended on", "Pee", "Poop", "Poop size", "Medicine", "Dose", "Notes"]];
 
     var items = [];
     feeds.forEach(function (e) { items.push({ at: e.start, kind: "feed", data: e }); });
     diapers.forEach(function (d) { items.push({ at: d.time, kind: "diaper", data: d }); });
+    meds.forEach(function (m) { items.push({ at: m.time, kind: "med", data: m }); });
     items.sort(function (a, b) { return a.at - b.at; });
 
     items.forEach(function (item) {
@@ -1819,12 +2106,16 @@
         var e = item.data;
         rows.push([date, time, "Feeding", SIDE_NAME[feedSide(e)],
           minutesOf(e.leftSec), minutesOf(e.rightSec), feedMinutes(e),
-          e.endSide ? SIDE_NAME[e.endSide] : "", "", "", "", e.notes]);
+          e.endSide ? SIDE_NAME[e.endSide] : "", "", "", "", "", "", e.notes]);
+      } else if (item.kind === "med") {
+        var m = item.data;
+        rows.push([date, time, "Medicine", "", "", "", "", "", "", "", "",
+          m.name, m.dose, m.notes]);
       } else {
         var d = item.data;
         rows.push([date, time, "Diaper", "", "", "", "", "",
           d.pee ? "Yes" : "", d.poop ? "Yes" : "",
-          d.size ? SIZE_NAME[d.size] : "", d.notes]);
+          d.size ? SIZE_NAME[d.size] : "", "", "", d.notes]);
       }
     });
 
@@ -1836,10 +2127,11 @@
   $("exportJson").addEventListener("click", function () {
     var payload = {
       app: "nursing-log",
-      version: 2,
+      version: 3,
       exported: new Date().toISOString(),
       entries: feeds,
-      diapers: diapers
+      diapers: diapers,
+      meds: meds
     };
     deliver("nursing-log-backup-" + stamp() + ".json", JSON.stringify(payload, null, 2),
       "application/json", markBackedUp);
@@ -1865,7 +2157,8 @@
 
       var inFeeds = Array.isArray(data) ? data : data.entries;
       var inDiapers = data.diapers;
-      if (!Array.isArray(inFeeds) && !Array.isArray(inDiapers)) {
+      var inMeds = data.meds;
+      if (!Array.isArray(inFeeds) && !Array.isArray(inDiapers) && !Array.isArray(inMeds)) {
         toast("That file isn't a Nursing Log backup");
         return;
       }
@@ -1902,6 +2195,22 @@
           added++;
         });
         saveDiapers(dList);
+      }
+
+      if (Array.isArray(inMeds)) {
+        var seenM = {};
+        meds.forEach(function (m) { seenM[m.time + "|" + m.name + "|" + m.dose] = true; });
+        var mList = meds.slice();
+        inMeds.forEach(function (raw) {
+          var m = normalizeMed(raw);
+          if (!m) return;
+          var key = m.time + "|" + m.name + "|" + m.dose;
+          if (seenM[key]) return;
+          seenM[key] = true;
+          mList.push(m);
+          added++;
+        });
+        saveMeds(mList);
       }
 
       renderAll();
@@ -1952,14 +2261,28 @@
 
   $("logClose").addEventListener("click", function () { $("logScrim").hidden = true; });
 
+  /* Where a backup can go depends on the browser, so say which one she has
+     rather than promising a share sheet that may never appear. */
+  function renderShareHint() {
+    $("exportJsonHint").textContent = fileShareLikely()
+      ? "Send it to Drive, email, or wherever you keep files"
+      : "This browser saves it to Downloads — send it on from there";
+  }
+
+  renderShareHint();
+
   $("aboutBtn").addEventListener("click", function () {
     alert(
       "Nursing Log\n\n" +
       "Everything you record is stored only on this phone, in this browser. " +
       "Nothing is sent anywhere and no account is needed.\n\n" +
-      "Because of that, use \"Save backup file\" now and then — it offers to send the file " +
-      "to Google Drive or email, and a dot appears on this menu button when it has been a " +
-      "while.\n\nClearing the browser's site data would erase the log."
+      "Because of that, use \"Save backup file\" now and then, and a dot appears on this " +
+      "menu button when it has been a while.\n\n" +
+      (fileShareLikely()
+        ? "This browser can hand the backup straight to Google Drive or email."
+        : "This browser won't pass files to other apps, so the backup lands in Downloads. " +
+          "Open Downloads afterwards and share it to Drive from there.") +
+      "\n\nClearing the browser's site data would erase the log."
     );
   });
 
