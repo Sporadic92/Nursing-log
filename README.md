@@ -7,9 +7,18 @@ the first visit, nothing sent anywhere.
 
 ## Put it on her phone (about 5 minutes)
 
-### Step 1 — turn on GitHub Pages (do this once, on a computer)
+### Step 1 — turn on GitHub Pages (do this once)
 
-1. Go to the repository on GitHub → **Settings** (top row) → **Pages** (left sidebar).
+GitHub Pages is free only on public repositories. This repository holds nothing private —
+just the app's code — because the feeding log itself never leaves the phone it was entered on.
+So make the repository public first:
+
+1. **Settings** → **General** → scroll to the bottom → **Change visibility** → **Make public**,
+   then confirm by typing the repository name.
+
+Then turn on Pages:
+
+1. **Settings** (top row) → **Pages** (left sidebar).
 2. Under **Build and deployment → Source**, choose **Deploy from a branch**.
 3. Set the branch to `claude/breastfeeding-tracker-android-hg00uu` and the folder to `/ (root)`.
 4. Click **Save**. Wait 1–2 minutes, then refresh the page — it will show the live link, which
