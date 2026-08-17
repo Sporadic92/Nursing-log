@@ -1398,6 +1398,7 @@ check('dim clock keeps counting', await dim.textContent('#veilTime') !== dimmedA
 
 // a tap wakes the screen instead of reaching the buttons underneath
 await dim.click('#dimVeil');
+await dim.waitForTimeout(700);                       // it fades out; see the settle below
 check('tap wakes the screen', !(await dim.isVisible('#dimVeil')));
 check('tap did not stop the feed', await dim.isVisible('#runningView'));
 check('feed still running', (await dim.$$('.entry')).length === 0);
@@ -1407,7 +1408,7 @@ check('feed still running', (await dim.$$('.entry')).length === 0);
    veil on pointerdown left the touch's click to land underneath, so waking the
    screen ended the feed. Tap where each button is, through the veil. */
 const tapThrough = async sel => {
-  await dim.waitForTimeout(1400);
+  await dim.waitForTimeout(2000);                    // the fade, then NL_DIM_MS again
   if (!(await dim.isVisible('#dimVeil'))) throw new Error('veil did not return before ' + sel);
   const box = await dim.locator(sel).boundingBox();
   await dim.touchscreen.tap(box.x + box.width / 2, box.y + box.height / 2);
@@ -1426,17 +1427,32 @@ check('the feed survives being woken', (await dim.evaluate(
 await tapThrough('[data-switch="R"]');
 check('waking does not switch sides', (await dim.getAttribute('[data-switch="L"]', 'class')).includes('active'));
 
-// only the waking tap is spent; the next one is a real tap again
-await dim.waitForTimeout(1400);
-const veilClock = await dim.locator('#veilTime').boundingBox();
-await dim.touchscreen.tap(veilClock.x + veilClock.width / 2, veilClock.y + veilClock.height / 2);
-await dim.waitForTimeout(60);
-const pause = await dim.locator('#pauseBtn').boundingBox();
-await dim.touchscreen.tap(pause.x + pause.width / 2, pause.y + pause.height / 2);
-await dim.waitForTimeout(150);
-check('a second tap works normally', (await dim.textContent('#pauseBtn')) === 'Resume');
+/* Waking is its own action: the veil fades rather than vanishing, and stays in
+   the way while it does, so the reflex second tap that follows the first lands
+   on it rather than on Stop & Save underneath. */
+await dim.waitForTimeout(2000);
+const stopBox = await dim.locator('#stopBtn').boundingBox();
+const tapStop = () => dim.touchscreen.tap(stopBox.x + stopBox.width / 2, stopBox.y + stopBox.height / 2);
+await tapStop();
+await dim.waitForTimeout(80);
+check('the veil fades rather than going at once', await dim.isVisible('#dimVeil'));
+await tapStop();                                     // the reflex second tap
+await dim.waitForTimeout(80);
+await tapStop();                                     // and a third
+await dim.waitForTimeout(700);
+check('tapping through the fade does nothing', await dim.isVisible('#runningView'));
+check('and saves nothing', (await dim.$$('.entry')).length === 0);
+check('the veil has gone once it settles', !(await dim.isVisible('#dimVeil')));
+
+// and the screen is properly live again afterwards, not left inert
+await dim.click('#pauseBtn');
+check('a tap after settling works', (await dim.textContent('#pauseBtn')) === 'Resume');
 await dim.click('#pauseBtn');
 check('back off pause', (await dim.textContent('#pauseBtn')) === 'Pause');
+await dim.waitForTimeout(1400);
+check('and it dims again after being woken', await dim.isVisible('#dimVeil'));
+await dim.click('#dimVeil');                         // leave it down for the sheet checks below
+await dim.waitForTimeout(700);
 
 // an open sheet holds the dim off
 await dim.click('#menuBtn');

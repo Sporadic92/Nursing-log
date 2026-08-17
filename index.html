@@ -169,6 +169,14 @@
     background: var(--surface-2); border: 1px solid var(--line); border-radius: 999px;
   }
 
+  /* Discarding a feed used to sit 4px under Stop & Save, full width, with the
+     opposite outcome — a thumb landing low threw the feeding away. Narrow and
+     set apart, like the chip above, so it takes aiming at. */
+  #cancelBtn {
+    width: auto; display: block; margin: 18px auto 0; padding: 12px 20px;
+    border-radius: 999px; border: 1px solid var(--line);
+  }
+
   .filter { padding: 10px 6px; font-size: 15px; }
   #filterRow { margin-top: 4px; }
 
@@ -245,6 +253,9 @@
   @media (prefers-color-scheme: dark) { .btn.primary { color: #2a1b23; } }
   .btn.danger { color: var(--danger); }
   .btn.wide { grid-column: 1 / -1; }
+  /* Same reasoning as #cancelBtn: the one destructive button in a sheet does
+     not sit a thumb's width under Save. */
+  .btn.danger.wide { margin-top: 12px; }
 
   /* A sheet opened to read a record wears .locked: same card layout, nothing live. */
   .sheet.locked .side-btn { pointer-events: none; }
@@ -320,20 +331,33 @@
     display: flex; flex-direction: column; align-items: center; justify-content: center;
     gap: 6px; cursor: pointer;
   }
+  /* It fades rather than vanishing, and stays in the way while it does: the tap
+     that wakes the screen is often followed by a second one before she has
+     looked, and Stop & Save is directly under the clock. */
+  .veil.lifting { opacity: 0; transition: opacity 500ms ease-out; pointer-events: auto; }
+  /* The 500ms is SETTLE_MS in the script — keep the two together, or the veil
+     goes before the fade ends and the tap under it lands after all. */
   .veil-time { font-size: 60px; font-weight: 200; font-variant-numeric: tabular-nums; color: #5f5f5f; }
   .veil-side { font-size: 16px; color: #454545; }
   .veil-hint { position: absolute; bottom: calc(44px + var(--safe-bottom)); font-size: 13px; color: #2f2f2f; }
 
+  /* Centred between both edges rather than pushed off the left one: with
+     left: 50% the box could only ever be half the screen wide, so "Saved 21 min
+     · Both" wrapped mid-phrase at the moment it is being read at a glance. */
   .toast {
-    position: fixed; left: 50%; transform: translateX(-50%);
+    position: fixed; left: 12px; right: 12px; margin: 0 auto; width: fit-content;
     bottom: calc(20px + var(--safe-bottom)); background: var(--text); color: var(--bg);
     padding: 12px 16px; border-radius: 30px; font-size: 15px; z-index: 100;
-    box-shadow: 0 6px 20px rgba(0,0,0,0.25); max-width: 92vw;
+    box-shadow: 0 6px 20px rgba(0,0,0,0.25);
     display: flex; align-items: center; gap: 14px;
   }
+  /* Undo is how every mis-tap in this app is taken back, and it was the
+     smallest thing on the screen. The negative margin keeps the toast the
+     height it looks while the target itself is thumb-sized. */
   .toast button {
     background: none; border: none; color: var(--bg); font: inherit; font-weight: 700;
-    text-decoration: underline; cursor: pointer; padding: 0; flex: none;
+    text-decoration: underline; cursor: pointer; flex: none;
+    padding: 12px 6px; margin: -12px -2px;
   }
 </style>
 </head>
@@ -779,6 +803,12 @@
      up an update yet. Add a new entry at the top whenever you ship, and bump
      CACHE in sw.js in the same commit. */
   var VERSIONS = [
+    { v: "1.19", date: "17 Aug 2026", notes: [
+      "Tapping the dark screen now fades it back gently, and taps don't count until it has gone — so the second tap that usually follows the first can't press anything.",
+      "Cancel without saving is a smaller button set further below Stop & Save, instead of sitting right under it where a thumb could catch it.",
+      "Delete sits further from Save in the editors, for the same reason.",
+      "Undo in the little black message is easier to hit, and the message no longer splits across two lines."
+    ] },
     { v: "1.18", date: "17 Aug 2026", notes: [
       "Fixed: tapping the dark screen to check the timer could stop or discard the feeding underneath it. The tap now only wakes the screen, so a feed can't disappear while you're nursing.",
       "The same slip could leave the app back on Start, so a later brush of the screen began a new feeding at 0:00 with the real one gone. That can't happen now."
@@ -3516,7 +3546,7 @@
   /* Called on any touch, and whenever the timer starts or stops. */
   function wakeScreen() {
     clearTimeout(dimTimer);
-    $("dimVeil").hidden = true;
+    dropVeil();
 
     if (!active) { releaseWake(); return; }
 
@@ -3528,33 +3558,51 @@
     }, DIM_AFTER);
   }
 
-  /* The wake tap has to be spent entirely on lifting the veil. Hiding it on
-     pointerdown used to let the touch's click land on whatever was underneath,
-     and the veil's clock sits directly over Stop & Save with Cancel just below
-     it — so a tap on the black screen, or a stray touch from the baby, ended
-     the feed and left the app idle, ready for the next brush to start a fresh
-     one at 0:00. The click is swallowed until the gesture is over: the next
-     pointerdown is a new touch and gets through as normal. */
-  var swallowTap = false;
-  var swallowTimer = null;
+  /* Waking the screen is its own action, and nothing else may happen while it
+     is happening. The veil's clock sits directly over Stop & Save, with Cancel
+     below it — so a tap on the black screen used to press whatever was beneath
+     once the veil had gone, and a second reflex tap did it even after the veil
+     stopped hiding on pointerdown. It now fades over SETTLE_MS, stays in the
+     way while it fades, and every click is swallowed until it has gone: she
+     taps, the nursery comes back gently, and only then is the screen live. */
+  var SETTLE_MS = window.NL_SETTLE_MS || 500;
+  var settleTimer = null;
+  var settleUntil = 0;
+
+  /* Takes the veil down for good — the fade is only for the wake tap. */
+  function dropVeil() {
+    clearTimeout(settleTimer);
+    var veil = $("dimVeil");
+    veil.classList.remove("lifting");
+    veil.hidden = true;
+  }
+
+  function liftVeil() {
+    var veil = $("dimVeil");
+    if (veil.classList.contains("lifting")) return;   /* already on its way out */
+    veil.classList.add("lifting");
+    /* A shade longer than the fade, so the click that follows the last tap of
+       it is swallowed too rather than landing the moment the veil goes. */
+    settleUntil = Date.now() + SETTLE_MS + 150;
+    settleTimer = setTimeout(function () {
+      veil.classList.remove("lifting");
+      veil.hidden = true;
+      wakeScreen();                                  /* live again: start counting to the next dim */
+    }, SETTLE_MS);
+  }
 
   document.addEventListener("pointerdown", function (e) {
     if (!$("dimVeil").hidden) {
-      swallowTap = true;
-      clearTimeout(swallowTimer);
-      swallowTimer = setTimeout(function () { swallowTap = false; }, 800);
+      liftVeil();
       if (e.cancelable) e.preventDefault();
       e.stopPropagation();
-    } else {
-      swallowTap = false;
+      return;                                        /* wakeScreen runs when the fade finishes */
     }
     wakeScreen();
   }, true);
 
   document.addEventListener("click", function (e) {
-    if (!swallowTap) return;
-    swallowTap = false;
-    clearTimeout(swallowTimer);
+    if (Date.now() >= settleUntil) return;
     e.preventDefault();
     e.stopPropagation();
   }, true);
