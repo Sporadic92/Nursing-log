@@ -221,7 +221,8 @@ they stay hidden while reading, since the list itself carries the value then.
 While a feed is running the app holds a **screen wake lock** and, after `DIM_AFTER` of no
 touch, covers itself with `#dimVeil` — a black screen showing just the clock and the side, at
 about 35% grey. The screen stays on so she can glance at it, without lighting a dark nursery.
-A tap anywhere lifts the veil rather than reaching the controls beneath. The lock is dropped
+A tap anywhere lifts the veil and is spent doing only that — see the gotcha below, because
+getting this wrong cost a feed. The lock is dropped
 when the feed ends and whenever the page is hidden (the browser revokes it anyway), and
 re-taken on return. `wakeScreen()` is the single entry point: call it after anything that
 starts or stops the timer.
@@ -293,6 +294,17 @@ Interaction rules worth preserving:
   every item again for each day heading — O(days × records), with a `new Date()` per step, on
   every save and every return to the app. Totals are now accumulated into a map in one pass, and
   only `historyDays` days are built. Both matter: a few months of records is thousands of rows.
+- **The wake tap has to be swallowed, not just acted on.** The veil used to hide itself on
+  `pointerdown`, so by the time the touch's `click` was dispatched the veil was gone and the
+  click hit whatever was underneath — and the veil's clock sits directly over **Stop & Save**,
+  with **Cancel without saving** a few pixels below it. Tapping the black screen to check the
+  time therefore ended the feed, leaving the app idle with the big Left/Right buttons under the
+  next stray touch: a fresh feed at 0:00 and the real one gone. The veil's pointerdown now
+  `preventDefault()`s and `stopPropagation()`s, and a document-level capture handler eats the
+  one `click` that follows; the next `pointerdown` clears the guard, so a deliberate second tap
+  still works. Any future full-screen overlay that dismisses itself needs the same treatment —
+  hiding an overlay on pointerdown is a click-through, on every mobile browser.
+
 - **`[hidden]` loses to any `display` rule.** `.row-2 { display: grid }` beat the browser's
   `[hidden]` and left panels on screen. There is a global `[hidden] { display: none !important }`
   guarding this — keep it.

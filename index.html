@@ -779,6 +779,10 @@
      up an update yet. Add a new entry at the top whenever you ship, and bump
      CACHE in sw.js in the same commit. */
   var VERSIONS = [
+    { v: "1.18", date: "17 Aug 2026", notes: [
+      "Fixed: tapping the dark screen to check the timer could stop or discard the feeding underneath it. The tap now only wakes the screen, so a feed can't disappear while you're nursing.",
+      "The same slip could leave the app back on Start, so a later brush of the screen began a new feeding at 0:00 with the real one gone. That can't happen now."
+    ] },
     { v: "1.17", date: "17 Aug 2026", notes: [
       "Cancel without saving no longer asks 'are you sure?' — it just does it, and the toast offers Undo, the way deleting always has.",
       "Forgot to tap Start? 'Started 5 min earlier' adds five minutes to the clock and moves the start time back with them. Tap it again for ten.",
@@ -3524,7 +3528,36 @@
     }, DIM_AFTER);
   }
 
-  document.addEventListener("pointerdown", wakeScreen, true);
+  /* The wake tap has to be spent entirely on lifting the veil. Hiding it on
+     pointerdown used to let the touch's click land on whatever was underneath,
+     and the veil's clock sits directly over Stop & Save with Cancel just below
+     it — so a tap on the black screen, or a stray touch from the baby, ended
+     the feed and left the app idle, ready for the next brush to start a fresh
+     one at 0:00. The click is swallowed until the gesture is over: the next
+     pointerdown is a new touch and gets through as normal. */
+  var swallowTap = false;
+  var swallowTimer = null;
+
+  document.addEventListener("pointerdown", function (e) {
+    if (!$("dimVeil").hidden) {
+      swallowTap = true;
+      clearTimeout(swallowTimer);
+      swallowTimer = setTimeout(function () { swallowTap = false; }, 800);
+      if (e.cancelable) e.preventDefault();
+      e.stopPropagation();
+    } else {
+      swallowTap = false;
+    }
+    wakeScreen();
+  }, true);
+
+  document.addEventListener("click", function (e) {
+    if (!swallowTap) return;
+    swallowTap = false;
+    clearTimeout(swallowTimer);
+    e.preventDefault();
+    e.stopPropagation();
+  }, true);
 
   /* ---------------- keep it live ---------------- */
 

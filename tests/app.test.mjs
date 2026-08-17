@@ -1402,6 +1402,42 @@ check('tap wakes the screen', !(await dim.isVisible('#dimVeil')));
 check('tap did not stop the feed', await dim.isVisible('#runningView'));
 check('feed still running', (await dim.$$('.entry')).length === 0);
 
+/* And the same with a real finger, which is the case that bit: the veil's clock
+   sits directly over Stop & Save, with Cancel a few pixels below it. Hiding the
+   veil on pointerdown left the touch's click to land underneath, so waking the
+   screen ended the feed. Tap where each button is, through the veil. */
+const tapThrough = async sel => {
+  await dim.waitForTimeout(1400);
+  if (!(await dim.isVisible('#dimVeil'))) throw new Error('veil did not return before ' + sel);
+  const box = await dim.locator(sel).boundingBox();
+  await dim.touchscreen.tap(box.x + box.width / 2, box.y + box.height / 2);
+  await dim.waitForTimeout(150);
+};
+
+await tapThrough('#stopBtn');
+check('waking does not reach Stop & Save', await dim.isVisible('#runningView'));
+check('waking saved nothing', (await dim.$$('.entry')).length === 0);
+
+await tapThrough('#cancelBtn');
+check('waking does not reach Cancel', await dim.isVisible('#runningView'));
+check('the feed survives being woken', (await dim.evaluate(
+  () => localStorage.getItem('nursinglog.active.v1'))) !== null);
+
+await tapThrough('[data-switch="R"]');
+check('waking does not switch sides', (await dim.getAttribute('[data-switch="L"]', 'class')).includes('active'));
+
+// only the waking tap is spent; the next one is a real tap again
+await dim.waitForTimeout(1400);
+const veilClock = await dim.locator('#veilTime').boundingBox();
+await dim.touchscreen.tap(veilClock.x + veilClock.width / 2, veilClock.y + veilClock.height / 2);
+await dim.waitForTimeout(60);
+const pause = await dim.locator('#pauseBtn').boundingBox();
+await dim.touchscreen.tap(pause.x + pause.width / 2, pause.y + pause.height / 2);
+await dim.waitForTimeout(150);
+check('a second tap works normally', (await dim.textContent('#pauseBtn')) === 'Resume');
+await dim.click('#pauseBtn');
+check('back off pause', (await dim.textContent('#pauseBtn')) === 'Pause');
+
 // an open sheet holds the dim off
 await dim.click('#menuBtn');
 await dim.waitForTimeout(1400);
