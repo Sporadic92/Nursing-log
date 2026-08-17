@@ -93,6 +93,10 @@ will leave it.
 - Tap a diaper in the list to read it back the same way, then **Edit** to change any of it or
   delete it.
 - **+ Add a past diaper** for one that wasn't logged when it happened.
+- Under the "last diaper" line, the card says **how many wet and how many dirty there have been
+  today**, and every day in the timeline says the same. A nappy that was both counts once in
+  each, so the two don't add up to the number of changes — wet and dirty are counted separately
+  because that's how the wet-and-dirty table in **?** is written.
 
 ### The timeline
 
@@ -100,7 +104,8 @@ The feeding card at the top always shows two things: **how long ago the last fee
 feeds are usually counted start to start — and **how long ago it finished**, which is the other
 half of the question at 3 a.m. The finished line also says which side it ended on, and the
 button for that side is highlighted and reads **pick up here**, since that's where the next feed
-starts. Below it, the diaper and medicine cards show **how long since the last one**.
+starts. Below it, the diaper and medicine cards show **how long since the last one**, and the
+diaper card adds today's wet and dirty counts.
 
 Below them, feedings, diapers and medicines share one timeline, newest first, with per-day
 totals. The **All / Feeds / Diapers / Meds** buttons narrow it to one kind when you want to read just that — the

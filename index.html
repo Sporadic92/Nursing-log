@@ -382,6 +382,7 @@
   <!-- Diapers -->
   <section class="card">
     <div class="since" id="diaperSince">No diapers recorded yet</div>
+    <div class="since-sub" id="diaperToday" hidden></div>
     <div class="prompt">Log a diaper</div>
     <div class="row-3">
       <button class="side-btn" data-diaper="pee">&#128167;<small>Pee</small></button>
@@ -768,6 +769,10 @@
      up an update yet. Add a new entry at the top whenever you ship, and bump
      CACHE in sw.js in the same commit. */
   var VERSIONS = [
+    { v: "1.16", date: "17 Aug 2026", notes: [
+      "The diaper card now says how many wet and how many dirty there have been today.",
+      "Each day in the list below says the same, in place of the old count of changes. A nappy that was both counts once as wet and once as dirty."
+    ] },
     { v: "1.15", date: "15 Aug 2026", notes: [
       "Swiping back now closes whatever card is open, instead of closing the whole app.",
       "Tapping the space beside a card you're part-way through editing no longer throws away what you typed — Cancel and Save are still the way out.",
@@ -1350,11 +1355,38 @@
     }
   }
 
+  /* Wet and dirty are counted apart, and one nappy can be both, so the two
+     don't add up to the number of changes — they are the pair the basics sheet
+     lists a day at a time, which is what the count is for. The walk stops at
+     midnight rather than crossing a log months long, since this runs on the
+     tick; anything above that point but not today is a nappy typed with a
+     later date, and dayKey catches it. */
+  function todayDiapers() {
+    var midnight = new Date(Date.now());
+    midnight.setHours(0, 0, 0, 0);
+    var from = midnight.getTime(), key = dayKey(Date.now()), c = { wet: 0, dirty: 0 };
+    for (var i = 0; i < diapers.length; i++) {
+      if (diapers[i].time < from) break;
+      if (dayKey(diapers[i].time) !== key) continue;
+      if (diapers[i].pee) c.wet++;
+      if (diapers[i].poop) c.dirty++;
+    }
+    return c;
+  }
+
   function renderDiaperCard() {
     var last = diapers[0];
     $("diaperSince").innerHTML = last
       ? "Last diaper <b>" + agoText(last.time) + "</b> &middot; " + diaperLabel(last)
       : "No diapers recorded yet";
+
+    var today = $("diaperToday");
+    today.hidden = !diapers.length;
+    if (today.hidden) return;
+    var c = todayDiapers();
+    today.innerHTML = c.wet || c.dirty
+      ? "Today <b>" + c.wet + "</b> wet &middot; <b>" + c.dirty + "</b> dirty"
+      : "None yet today";
   }
 
   function medLabel(m) {
@@ -1495,10 +1527,14 @@
       var key = dayKey(item.at);
       item.day = key;
       var t = totals[key];
-      if (!t) { t = totals[key] = { feeds: 0, minutes: 0, diapers: 0, meds: 0 }; days.push(key); }
+      if (!t) { t = totals[key] = { feeds: 0, minutes: 0, diapers: 0, wet: 0, dirty: 0, meds: 0 }; days.push(key); }
       if (item.kind === "feed") { t.feeds++; t.minutes += feedMinutes(item.data); }
       else if (item.kind === "med") t.meds++;
-      else t.diapers++;
+      else {
+        t.diapers++;
+        if (item.data.pee) t.wet++;
+        if (item.data.poop) t.dirty++;
+      }
     });
 
     var currentDay = null, shownDays = 0;
@@ -1521,7 +1557,10 @@
         var sum = document.createElement("span");
         var parts = [];
         if (t.feeds) parts.push(t.feeds + (t.feeds === 1 ? " feed" : " feeds") + " · " + t.minutes + " min");
-        if (t.diapers) parts.push(t.diapers + (t.diapers === 1 ? " diaper" : " diapers"));
+        /* A day is read as wet and dirty rather than as a number of changes,
+           which is also how the PDF's table puts it. A zero stays on screen:
+           no dirty nappy all day is the half worth seeing. */
+        if (t.diapers) parts.push(t.wet + " wet · " + t.dirty + " dirty");
         if (t.meds) parts.push(t.meds + (t.meds === 1 ? " dose" : " doses"));
         sum.textContent = parts.join(" · ");
         h.appendChild(name);

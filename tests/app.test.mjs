@@ -277,6 +277,7 @@ check('nothing logged until saved', (await page.$$('.entry')).length === 2);
 await page.click('#diaperCancel');
 check('cancel logs nothing', (await page.$$('.entry')).length === 2);
 check('diaper stat still 0', await page.textContent('#statDiapers') === '0');
+check('no today line before there is anything to count', !(await page.isVisible('#diaperToday')));
 
 // poop asks for a size
 await page.click('[data-diaper="poop"]');
@@ -295,6 +296,8 @@ check('diaper saved from sheet', (await page.$$('.entry')).length === 3);
 check('size shown in list', (await page.textContent('#history')).includes('Medium poop'));
 check('notes shown', (await page.textContent('#history')).includes('Seedy, mustard'));
 check('diaper stat = 1', await page.textContent('#statDiapers') === '1');
+check('today counts the poop as dirty and not wet',
+  (await page.textContent('#diaperToday')).replace(/\s+/g, ' ') === 'Today 0 wet · 1 dirty');
 
 check('a diaper logged now sorts above a feeding from seconds ago',
   (await page.$$eval('.entry', ns => ns[0].textContent)).includes('Poop'));
@@ -332,6 +335,7 @@ await page.click('[data-toggle="pee"]');
 await page.click('#diaperSave');
 check('size dropped with the poop', !(await page.textContent('#history')).includes('Medium poop'));
 check('still one diaper', await page.textContent('#statDiapers') === '1');
+check('today follows the edit', (await page.textContent('#diaperToday')).includes('1 wet · 0 dirty'));
 
 // both, with a size
 await page.click('[data-diaper="both"]');
@@ -341,9 +345,11 @@ check('size prompt shown for both', await page.isVisible('#sizeWrap'));
 await page.click('[data-size="S"]');
 await page.click('#diaperSave');
 check('both logged', await page.textContent('#statDiapers') === '2');
+check('a both counts in each column, so the two do not add up to the changes',
+  (await page.textContent('#diaperToday')).includes('2 wet · 1 dirty'));
 check('both label', (await page.textContent('#history')).includes('Pee + poop'));
 check('small size shown', (await page.textContent('#history')).includes('Small poop'));
-check('day summary counts diapers', (await page.textContent('#history')).includes('2 diapers'));
+check('day summary counts wet and dirty', (await page.textContent('#history')).includes('2 wet · 1 dirty'));
 
 // selecting neither is still rejected
 await page.click('#addDiaperBtn');
@@ -358,6 +364,8 @@ await page.fill('#dTime', '22:10');
 await page.click('#diaperSave');
 check('past diaper added', (await page.textContent('#history')).includes('10:10 PM'));
 check('today diaper count unchanged', await page.textContent('#statDiapers') === '2');
+check('yesterday stays out of today\'s wet and dirty',
+  (await page.textContent('#diaperToday')).includes('2 wet · 1 dirty'));
 
 // a record with no notes should not show an empty notes box while reading
 await page.click('[data-diaper="pee"]');
@@ -1517,15 +1525,22 @@ await mn.evaluate(() => {
   localStorage.setItem('nursinglog.entries.v1', JSON.stringify([
     { id: 'mn', start: Date.now() - 3600000, leftSec: 600, rightSec: 0, endSide: 'L', notes: '' },
   ]));
+  localStorage.setItem('nursinglog.diapers.v1', JSON.stringify([
+    { id: 'mnd', time: Date.now() - 3600000, pee: true, poop: false, size: null, notes: '' },
+  ]));
 });
 await mn.reload({ waitUntil: 'networkidle' });
 check('the evening\'s feed is under Today', (await mn.textContent('.day')).includes('Today'));
 check('and counts in Today\'s totals', (await mn.textContent('#statCount')) === '1');
+check('the evening\'s nappy counts in today\'s wet',
+  (await mn.textContent('#diaperToday')).includes('1 wet · 0 dirty'));
 
 await mn.evaluate(() => { window.__clock.offset += 6000; });
 await mn.waitForTimeout(1600);
 check('after midnight it is yesterday\'s', (await mn.textContent('.day')).includes('Yesterday'));
 check('and Today starts over without being prompted', (await mn.textContent('#statCount')) === '0');
+check('the wet and dirty count starts over too',
+  (await mn.textContent('#diaperToday')) === 'None yet today');
 await mnCtx.close();
 
 // ---------- a long log stays quick ----------
@@ -1551,7 +1566,7 @@ await lp.screenshot({ path: `${SHOTS}/show-older.png`, fullPage: true });
 check('only the recent fortnight is built', (await lp.$$('.day')).length === 14);
 check('the older days are offered, counted', (await lp.textContent('#history')).includes('Show older (6 more days)'));
 check('a day\'s totals survive the single pass',
-  (await lp.textContent('.day')).includes('2 feeds · 20 min') && (await lp.textContent('.day')).includes('1 diaper'));
+  (await lp.textContent('.day')).includes('2 feeds · 20 min') && (await lp.textContent('.day')).includes('1 wet · 0 dirty'));
 
 await lp.click('text=Show older (6 more days)');
 check('Show older reaches the rest', (await lp.$$('.day')).length === 20);
@@ -1561,7 +1576,7 @@ check('and stops offering once there is nothing older',
 /* Filtering rebuilds the list; the day count has to follow the filter. */
 await lp.click('[data-filter="diapers"]');
 check('a filtered day shows only its own total',
-  (await lp.textContent('.day')).includes('1 diaper') && !(await lp.textContent('.day')).includes('feed'));
+  (await lp.textContent('.day')).includes('1 wet · 0 dirty') && !(await lp.textContent('.day')).includes('feed'));
 await lp.click('[data-filter="all"]');
 await longCtx.close();
 

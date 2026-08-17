@@ -119,6 +119,12 @@ Rules the code depends on:
 - **`endSide` only ever names a side with time on it.** Stopping a second after switching must
   not leave it pointing at an empty side. `normalizeFeed()` enforces this.
 - **`size` only survives with `poop: true`.** `normalizeDiaper()` strips it otherwise.
+- **Wet and dirty are counted apart, and a `pee && poop` counts in both.** So the two never add
+  up to the number of changes — that is the point, since the basics sheet and the PDF's table
+  both read a day as wet-count and dirty-count. The diaper card shows today's pair
+  (`todayDiapers()`, which stops walking at midnight because it runs on the tick), and the
+  timeline's day headings show each day's in place of a count of nappies. A zero is shown, not
+  omitted: no dirty nappy all day is the half worth seeing.
 - **A dose with no medicine named is not a record.** Nothing else identifies it, so
   `normalizeMed()` returns null and the editor refuses to save. The amount is optional: plenty
   of things are taken without one being written down.
@@ -151,7 +157,8 @@ Bump the storage keys only with a migration in place — real data lives behind 
 Top to bottom: feeding card (idle: two lines — when the last feed *started* and when it
 *finished*, since feeds are counted start to start but time off the breast is the other half of
 the question — plus Left/Right start buttons; running: total elapsed, a live per-side tile each,
-Pause, Stop & Save), diaper card (time since last + Pee / Poop / Both), medicine card (time
+Pause, Stop & Save), diaper card (time since last, today's wet and dirty counts, + Pee / Poop /
+Both), medicine card (time
 since last dose + up to two recent medicines as one-tap buttons, plus a way to log something
 else), today's stats, `All / Feeds / Diapers / Meds` filter, then the timeline grouped by day
 with per-day totals.
