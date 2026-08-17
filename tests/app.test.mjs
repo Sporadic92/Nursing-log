@@ -835,6 +835,10 @@ await page.evaluate(() => {
 });
 await page.reload({ waitUntil: 'networkidle' });
 check('old log with no backup is nudged', await page.isVisible('#backupDot'));
+/* That feed is now a month behind the rest, and "719h 59m" is no answer. */
+check('a gap of days is counted in days',
+  /\d+ days( \d+h)? since the one before/.test(await page.textContent('#history'))
+  && !(await page.textContent('#history')).includes('719h'));
 
 // backing up clears the nudge
 await page.click('#menuBtn');

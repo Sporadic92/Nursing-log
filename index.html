@@ -1160,6 +1160,17 @@
     return m ? h + "h " + m + "m" : h + "h";
   }
 
+  /* Gaps between feeds are hours, until a break in the logging or a merge from
+     the other phone makes one days long — and "719h 59m" is not an answer to
+     anything. */
+  function gapText(ms) {
+    var mins = Math.round(ms / 60000);
+    if (mins < 1440) return durationText(mins);
+    var days = Math.floor(mins / 1440), hours = Math.round((mins % 1440) / 60);
+    if (hours === 24) { days++; hours = 0; }
+    return days + (days === 1 ? " day" : " days") + (hours ? " " + hours + "h" : "");
+  }
+
   function agoText(ms) {
     var mins = Math.floor((Date.now() - ms) / 60000);
     if (mins < 1) return "just now";
@@ -1640,7 +1651,7 @@
       if (item.kind === "feed" && gaps[item.data.id]) {
         var gapLine = document.createElement("div");
         gapLine.className = "gap";
-        gapLine.textContent = durationText(Math.round(gaps[item.data.id] / 60000)) + " since the one before";
+        gapLine.textContent = gapText(gaps[item.data.id]) + " since the one before";
         meta.appendChild(gapLine);
       }
 
