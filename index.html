@@ -160,6 +160,14 @@
     width: 100%; background: none; border: none; color: var(--muted);
     font-size: 15px; padding: 12px; margin-top: 4px; cursor: pointer; font-family: inherit;
   }
+  /* A chip rather than a line of text: it sits between the clock and the prompt,
+     and muted words under a muted prompt would never read as something to tap.
+     Narrow on purpose too — a full-width target here would be under a thumb
+     reaching for a side tile. */
+  .text-btn.chip {
+    width: auto; display: block; margin: 6px auto 0; padding: 9px 16px; font-size: 14px;
+    background: var(--surface-2); border: 1px solid var(--line); border-radius: 999px;
+  }
 
   .filter { padding: 10px 6px; font-size: 15px; }
   #filterRow { margin-top: 4px; }
@@ -207,6 +215,7 @@
   .entry .meta { flex: 1; min-width: 0; }
   .entry .time { font-weight: 600; }
   .entry .sub { font-size: 13px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .entry .gap { font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
   .empty { text-align: center; color: var(--muted); padding: 30px 10px; font-size: 15px; }
 
   .scrim {
@@ -360,6 +369,7 @@
     <div id="runningView" hidden>
       <div class="since">Feeding since <b id="startedAt">&mdash;</b></div>
       <div class="elapsed" id="elapsed">0:00</div>
+      <button class="text-btn chip" id="earlierBtn">Started 5 min earlier</button>
       <div class="prompt" style="margin-top:0" id="runPrompt">Tap the other side to switch</div>
       <div class="row-2">
         <button class="side-tile" data-switch="L">
@@ -560,7 +570,7 @@
   <div class="sheet" role="dialog" aria-modal="true">
     <h3>Data &amp; backup</h3>
     <p class="backup-status" id="backupStatus"></p>
-    <button class="menu-item" id="exportPdf">Summary for the doctor (PDF)<small>Last two weeks on a page, ready to share</small></button>
+    <button class="menu-item" id="exportPdf">Summary for the doctor (PDF)<small>The last four weeks, ready to share</small></button>
     <button class="menu-item" id="exportCsv">Export spreadsheet (CSV)<small>Feedings and diapers, for Excel or Google Sheets</small></button>
     <button class="menu-item" id="exportJson">Save backup file<small id="exportJsonHint">Send it to Drive, email, or wherever you keep files</small></button>
     <button class="menu-item" id="importJson">Restore from backup<small>Adds anything missing from a backup file</small></button>
@@ -769,6 +779,12 @@
      up an update yet. Add a new entry at the top whenever you ship, and bump
      CACHE in sw.js in the same commit. */
   var VERSIONS = [
+    { v: "1.17", date: "17 Aug 2026", notes: [
+      "Cancel without saving no longer asks 'are you sure?' — it just does it, and the toast offers Undo, the way deleting always has.",
+      "Forgot to tap Start? 'Started 5 min earlier' adds five minutes to the clock and moves the start time back with them. Tap it again for ten.",
+      "Every feeding in the list now says how long after the one before it was.",
+      "The doctor's summary covers four weeks instead of two, carrying on to a second page when it needs to. A log younger than that is shown as the days it actually has."
+    ] },
     { v: "1.16", date: "17 Aug 2026", notes: [
       "The diaper card now says how many wet and how many dirty there have been today.",
       "Each day in the list below says the same, in place of the old count of changes. A nappy that was both counts once as wet and once as dirty."
@@ -1522,6 +1538,15 @@
        on the record. This used to walk the whole log again for each heading —
        fine for a week of records, minutes of dropped frames by the time a log
        is a few months old, and it ran on every save. */
+    /* Feeds are counted start to start, so each row carries how long it was
+       after the one before it. Read from the whole list rather than the visible
+       window, or the oldest feed on screen — and every feed at all under the
+       Diapers filter — would lose the answer. */
+    var gaps = {};
+    for (var g = 0; g + 1 < feeds.length; g++) {
+      gaps[feeds[g].id] = feeds[g].start - feeds[g + 1].start;
+    }
+
     var totals = {}, days = [];
     items.forEach(function (item) {
       var key = dayKey(item.at);
@@ -1611,6 +1636,12 @@
         line3.className = "sub";
         line3.textContent = notes;
         meta.appendChild(line3);
+      }
+      if (item.kind === "feed" && gaps[item.data.id]) {
+        var gapLine = document.createElement("div");
+        gapLine.className = "gap";
+        gapLine.textContent = durationText(Math.round(gaps[item.data.id] / 60000)) + " since the one before";
+        meta.appendChild(gapLine);
       }
 
       row.appendChild(pill);
@@ -1748,12 +1779,47 @@
     }, "Resume");
   });
 
+  /* This used to ask "are you sure?", which is the one thing this app has
+     decided not to do: a dialog at 3 a.m. gets tapped through on reflex and
+     then the feed is gone for good. Discarding happens, and Undo brings the
+     clock back exactly as it was. */
   $("cancelBtn").addEventListener("click", function () {
-    if (confirm("Discard this feeding without saving?")) {
-      setActive(null);
+    var gone = active;
+    setActive(null);
+    renderAll();
+    wakeScreen();
+
+    toast("Feeding discarded", function () {
+      if (active) { toast("A feeding is already running"); return; }
+      setActive(gone);
       renderAll();
       wakeScreen();
-    }
+      buzz(20);
+      toast("Back to feeding");
+    }, "Undo");
+  });
+
+  /* Forgetting to tap Start is the usual reason the clock is short — the feed
+     was already going. The five minutes go on the side the clock is on, which
+     is the side she has been feeding, and the start moves with them so the gap
+     to the feed before stays honest. */
+  $("earlierBtn").addEventListener("click", function () {
+    if (!active) return;
+    var a = active, side = a.side;
+    a.start -= 300000;
+    if (side === "L") a.leftSec += 300; else a.rightSec += 300;
+    setActive(a);
+    renderAll();
+
+    toast("5 minutes added", function () {
+      if (active !== a) { toast("That feeding has moved on"); return; }
+      a.start += 300000;
+      if (side === "L") a.leftSec = Math.max(0, a.leftSec - 300);
+      else a.rightSec = Math.max(0, a.rightSec - 300);
+      setActive(a);
+      renderAll();
+      toast("Taken back");
+    }, "Undo");
   });
 
   /* ---------------- read-only mode ---------------- */
@@ -2325,7 +2391,9 @@
   }
 
 
-  var REPORT_DAYS = 14;
+  /* Four weeks rather than two: the six-week check asks about a stretch longer
+     than a fortnight, and the table pages on when it has to. */
+  var REPORT_DAYS = 28;
 
   function summarise(days) {
     var end = new Date();
@@ -2334,10 +2402,27 @@
     start.setDate(start.getDate() - (days - 1));
     start.setHours(0, 0, 0, 0);
 
+    /* A log younger than the window is not padded out with empty days — the
+       report starts at the first record instead, so a week-old log reads as a
+       week rather than as three weeks of nothing and a week of feeds. */
+    var oldest = oldestRecordMs();
+    if (oldest && oldest > start.getTime()) {
+      start = new Date(oldest);
+      start.setHours(0, 0, 0, 0);
+    }
+
+    /* Counted by walking the calendar rather than dividing by 86400000, since
+       the clocks going back makes one of these days 25 hours long. */
+    var count = 0, probe = new Date(start);
+    while (count < days && probe.getTime() <= end.getTime()) {
+      count++;
+      probe.setDate(probe.getDate() + 1);
+    }
+
     var from = start.getTime(), to = end.getTime();
     var rows = [], index = {};
 
-    for (var d = 0; d < days; d++) {
+    for (var d = 0; d < count; d++) {
       var when = new Date(start);
       when.setDate(start.getDate() + d);
       var row = {
@@ -2398,14 +2483,15 @@
     return new Date(ms).toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" });
   }
 
-  function drawSummaryPage(page, data) {
+  /* Returns how many of the day rows it managed to fit, newest first. */
+  function drawSummaryPage(page, data, rows) {
     var right = PDF_W - PDF_M;
     var span = shortDay(data.from) + "  to  " + shortDay(data.to);
 
     put(page, PDF_M, 52, "NURSING LOG", { size: 8, bold: true, color: ACCENT });
     put(page, right, 52, "Prepared " + shortDay(Date.now()), { size: 8, color: MUTED, align: "right" });
     put(page, PDF_M, 76, "Feeding & Diaper Summary", { size: 19, bold: true });
-    put(page, PDF_M, 92, span + "  ·  " + REPORT_DAYS + " days", { size: 9.5, color: MUTED });
+    put(page, PDF_M, 92, span + "  ·  " + data.rows.length + " days", { size: 9.5, color: MUTED });
     rule(page, PDF_M, 104, right, RULE);
 
     /* At a glance */
@@ -2448,51 +2534,89 @@
     put(page, PDF_M, top - 4, String(peak), { size: 7, color: MUTED });
 
     var slot = (right - PDF_M) / d.rows.length, barW = Math.min(9, slot / 3);
+    /* Every other date at a fortnight, every fourth at a month — the labels
+       would run into each other otherwise. */
+    var stride = Math.ceil(d.rows.length / 7);
     d.rows.forEach(function (r, n) {
       var mid = PDF_M + slot * (n + 0.5);
       var fh = (r.feeds / peak) * chartH, dh = ((r.pee + r.poop) / peak) * chartH;
       if (fh > 0) box(page, mid - barW - 1.5, base - fh, barW, fh, ACCENT);
       if (dh > 0) box(page, mid + 1.5, base - dh, barW, dh, COOL);
-      if (n % 2 === 0 || n === d.rows.length - 1) {
+      if (n % stride === 0 || n === d.rows.length - 1) {
         put(page, mid, base + 12, new Date(r.at).toLocaleDateString([], { month: "numeric", day: "numeric" }),
           { size: 7.5, color: MUTED, align: "center" });
       }
     });
     rule(page, PDF_M, base, right, RULE);
 
-    /* Daily table */
+    /* Daily table — as much of it as this page has room for. */
     var tableTop = base + 46;
     put(page, PDF_M, tableTop - 12, "Day by day", { size: 10.5, bold: true });
+    return drawDayTable(page, d, rows, 0, tableTop);
+  }
 
-    var cols = [220, 300, 356, 452, 508, 560];
-    var heads = ["Feeds", "Total", "Average", "Left / Right", "Wet", "Dirty"];
-    put(page, PDF_M, tableTop, "Date", { size: 8, bold: true, color: MUTED });
-    for (i = 0; i < heads.length; i++) {
-      put(page, cols[i], tableTop, heads[i], { size: 8, bold: true, color: MUTED, align: "right" });
+  var TABLE_COLS = [220, 300, 356, 452, 508, 560];
+  var TABLE_HEADS = ["Feeds", "Total", "Average", "Left / Right", "Wet", "Dirty"];
+  var ROW_H = 18;
+
+  /* The lowest baseline a day row may take. What is below belongs to the Total
+     line and the footer, so reserving it here is what keeps the total from
+     being pushed off the bottom of a full page. */
+  var TABLE_FLOOR = PDF_H - 92;
+
+  /* Rows are drawn newest first and stop when the page runs out; the number
+     drawn goes back to the caller, which carries the rest onto another page. A
+     month of days does not fit under the chart. */
+  function drawDayTable(page, d, rows, offset, top) {
+    var right = PDF_W - PDF_M;
+
+    put(page, PDF_M, top, "Date", { size: 8, bold: true, color: MUTED });
+    for (var i = 0; i < TABLE_HEADS.length; i++) {
+      put(page, TABLE_COLS[i], top, TABLE_HEADS[i], { size: 8, bold: true, color: MUTED, align: "right" });
     }
-    rule(page, PDF_M, tableTop + 6, right, RULE);
+    rule(page, PDF_M, top + 6, right, RULE);
 
-    var lineY = tableTop + 21;
-    d.rows.slice().reverse().forEach(function (r, n) {
-      if (n % 2 === 1) box(page, PDF_M - 4, lineY - 12, right - PDF_M + 8, 18, TINT);
+    var lineY = top + 21;
+    var take = Math.max(0, Math.min(rows.length, Math.floor((TABLE_FLOOR - lineY) / ROW_H) + 1));
+
+    for (i = 0; i < take; i++) {
+      var r = rows[i];
+      /* Striped on the row's place in the whole table, so the banding carries
+         across the page break rather than restarting. */
+      if ((offset + i) % 2 === 1) box(page, PDF_M - 4, lineY - 12, right - PDF_M + 8, 18, TINT);
       var quiet = !r.feeds && !r.pee && !r.poop;
       var tone = quiet ? MUTED : INK;
       put(page, PDF_M, lineY, shortDay(r.at), { size: 9, color: tone });
-      put(page, cols[0], lineY, r.feeds ? String(r.feeds) : "-", { size: 9, color: tone, align: "right" });
-      put(page, cols[1], lineY, r.minutes ? hoursMins(r.minutes) : "-", { size: 9, color: tone, align: "right" });
-      put(page, cols[2], lineY, r.feeds ? Math.round(r.minutes / r.feeds) + "m" : "-", { size: 9, color: tone, align: "right" });
-      put(page, cols[3], lineY, r.feeds ? r.leftMin + " / " + r.rightMin : "-", { size: 9, color: tone, align: "right" });
-      put(page, cols[4], lineY, r.pee ? String(r.pee) : "-", { size: 9, color: tone, align: "right" });
-      put(page, cols[5], lineY, r.poop ? String(r.poop) : "-", { size: 9, color: tone, align: "right" });
-      lineY += 18;
-    });
+      put(page, TABLE_COLS[0], lineY, r.feeds ? String(r.feeds) : "-", { size: 9, color: tone, align: "right" });
+      put(page, TABLE_COLS[1], lineY, r.minutes ? hoursMins(r.minutes) : "-", { size: 9, color: tone, align: "right" });
+      put(page, TABLE_COLS[2], lineY, r.feeds ? Math.round(r.minutes / r.feeds) + "m" : "-", { size: 9, color: tone, align: "right" });
+      put(page, TABLE_COLS[3], lineY, r.feeds ? r.leftMin + " / " + r.rightMin : "-", { size: 9, color: tone, align: "right" });
+      put(page, TABLE_COLS[4], lineY, r.pee ? String(r.pee) : "-", { size: 9, color: tone, align: "right" });
+      put(page, TABLE_COLS[5], lineY, r.poop ? String(r.poop) : "-", { size: 9, color: tone, align: "right" });
+      lineY += ROW_H;
+    }
 
-    rule(page, PDF_M, lineY - 10, right, RULE);
-    put(page, PDF_M, lineY + 4, "Total", { size: 9, bold: true });
-    put(page, cols[0], lineY + 4, String(d.totals.feeds), { size: 9, bold: true, align: "right" });
-    put(page, cols[1], lineY + 4, hoursMins(d.totals.minutes), { size: 9, bold: true, align: "right" });
-    put(page, cols[4], lineY + 4, String(d.totals.pee), { size: 9, bold: true, align: "right" });
-    put(page, cols[5], lineY + 4, String(d.totals.poop), { size: 9, bold: true, align: "right" });
+    /* The total belongs under the last day, wherever that landed. */
+    if (take === rows.length) {
+      rule(page, PDF_M, lineY - 10, right, RULE);
+      put(page, PDF_M, lineY + 4, "Total", { size: 9, bold: true });
+      put(page, TABLE_COLS[0], lineY + 4, String(d.totals.feeds), { size: 9, bold: true, align: "right" });
+      put(page, TABLE_COLS[1], lineY + 4, hoursMins(d.totals.minutes), { size: 9, bold: true, align: "right" });
+      put(page, TABLE_COLS[4], lineY + 4, String(d.totals.pee), { size: 9, bold: true, align: "right" });
+      put(page, TABLE_COLS[5], lineY + 4, String(d.totals.poop), { size: 9, bold: true, align: "right" });
+    }
+
+    return take;
+  }
+
+  function drawTablePage(page, d, rows, offset) {
+    var right = PDF_W - PDF_M;
+    put(page, PDF_M, 52, "NURSING LOG", { size: 8, bold: true, color: ACCENT });
+    put(page, right, 52, shortDay(d.from) + "  to  " + shortDay(d.to),
+      { size: 8, color: MUTED, align: "right" });
+    put(page, PDF_M, 76, "Day by day, continued", { size: 19, bold: true });
+    rule(page, PDF_M, 92, right, RULE);
+    return drawDayTable(page, d, rows, offset, 116);
   }
 
   function wrapText(str, width, size) {
@@ -2535,10 +2659,10 @@
     return out;
   }
 
-  function drawNotesPage(page, data, notes) {
+  function drawNotesPage(page, data, notes, number) {
     var right = PDF_W - PDF_M;
     put(page, PDF_M, 52, "NURSING LOG", { size: 8, bold: true, color: ACCENT });
-    put(page, right, 52, "Page 2", { size: 8, color: MUTED, align: "right" });
+    put(page, right, 52, "Page " + number, { size: 8, color: MUTED, align: "right" });
     put(page, PDF_M, 76, "Notes & medicines", { size: 19, bold: true });
     put(page, PDF_M, 92, "Doses taken, and anything written alongside a feeding or a change",
       { size: 9.5, color: MUTED });
@@ -2574,14 +2698,27 @@
     var notes = notesAndDoses(data);
     var pages = [];
 
+    var rows = data.rows.slice().reverse();          /* newest day first */
     var one = pdfPage();
-    drawSummaryPage(one, data);
+    var placed = drawSummaryPage(one, data, rows);
     pages.push(one);
 
+    /* Whatever the first page couldn't hold carries on overleaf. The guard is
+       a runaway stop, not a limit anything real reaches: four weeks needs one
+       continuation page. */
+    var rest = rows.slice(placed);
+    while (rest.length && pages.length < 6) {
+      var more = pdfPage();
+      var took = drawTablePage(more, data, rest, rows.length - rest.length);
+      pages.push(more);
+      if (!took) break;
+      rest = rest.slice(took);
+    }
+
     if (notes.length) {
-      var two = pdfPage();
-      drawNotesPage(two, data, notes);
-      pages.push(two);
+      var last = pdfPage();
+      drawNotesPage(last, data, notes, pages.length + 1);
+      pages.push(last);
     }
 
     for (var i = 0; i < pages.length; i++) {

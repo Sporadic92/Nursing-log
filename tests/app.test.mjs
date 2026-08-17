@@ -460,14 +460,17 @@ check('declared stream lengths match the streams', lengthsOk);
 check('fonts are the built-in ones, nothing embedded',
   pdf.includes('/BaseFont /Helvetica') && pdf.includes('/BaseFont /Helvetica-Bold')
   && !pdf.includes('/FontFile'));
-check('one or two pages', /\/Count [12][^0-9]/.test(pdf));
+const pdfPages = +(pdf.match(/\/Count (\d+)/) || [])[1];
+check('the page tree counts its pages (' + pdfPages + ')', pdfPages >= 1 && pdfPages <= 6);
+check('a fortnight-long log needs no continuation page', !pdf.includes('Day by day, continued'));
 check('pdf has the title', pdf.includes('Feeding & Diaper Summary'));
 check('pdf has the at-a-glance tiles',
   ['Feeds per day', 'Time per day', 'Average feed', 'Longest gap', 'Wet per day', 'Dirty per day']
     .every(k => pdf.includes(k)));
 check('pdf has the day table', pdf.includes('Day by day') && pdf.includes('Left / Right'));
 check('pdf carries notes through', pdf.includes('Seedy, mustard colored'));
-check('pdf page numbering', pdf.includes('Page 1 of 2') && pdf.includes('Page 2 of 2'));
+check('pdf page numbering',
+  pdf.includes('Page 1 of ' + pdfPages) && pdf.includes(`Page ${pdfPages} of ${pdfPages}`));
 check('pdf escapes parentheses in notes', !/[^\\]\(\)/.test(pdf.split('stream')[1] || ''));
 await page.click('#menuBtn');
 check('pdf did not count as a backup', !(await page.textContent('#backupStatus')).includes('today'));
@@ -1022,8 +1025,43 @@ await page.click('#toastAction');
 check('resume refuses over a running feed', (await page.textContent('#toastText')).includes('already running'));
 check('the new feed is untouched', await page.isVisible('#runningView'));
 check('and the saved one is still saved', await feedsNow() === before + 1);
-page.once('dialog', d => d.accept());
+
+// ---------- forgetting to tap start, and discarding by mistake ----------
+await page.waitForTimeout(1200);
+const activeStart = () => page.evaluate(() =>
+  JSON.parse(localStorage.getItem('nursinglog.active.v1')).start);
+const shortClock = toSec(await page.textContent('#elapsed'));
+const startedBefore = await page.textContent('#startedAt');
+const startMsBefore = await activeStart();
+await page.click('#earlierBtn');
+check('five minutes goes on the clock',
+  toSec(await page.textContent('#elapsed')) - shortClock >= 299);
+check('and onto the side being fed', toSec(await page.textContent('#leftVal')) >= 300);
+check('the start time moves back with it', (await page.textContent('#startedAt')) !== startedBefore);
+check('by exactly five minutes', startMsBefore - await activeStart() === 300000);
+check('adding time offers Undo', await page.textContent('#toastAction') === 'Undo');
+await page.click('#toastAction');
+check('and takes it straight back off',
+  toSec(await page.textContent('#elapsed')) - shortClock < 60);
+check('the start comes back too', await activeStart() === startMsBefore);
+check('nothing was saved either way', await feedsNow() === before + 1);
+
+/* Cancel used to open a confirm, which is the one thing this app decided not
+   to do: at 3 a.m. it gets tapped through and the feed is gone. */
+let dialogs = 0;
+page.on('dialog', d => { dialogs++; d.accept(); });
 await page.click('#cancelBtn');
+await page.waitForTimeout(200);
+check('discarding asks nothing', dialogs === 0);
+check('the feeding is gone from the screen', await page.isVisible('#idleView'));
+check('and was not saved', await feedsNow() === before + 1);
+check('discarding offers Undo', await page.isVisible('#toastAction')
+  && await page.textContent('#toastAction') === 'Undo');
+await page.click('#toastAction');
+check('undo puts the feeding back', await page.isVisible('#runningView'));
+check('with its time still on it', toSec(await page.textContent('#elapsed')) >= shortClock);
+await page.click('#cancelBtn');
+check('and it can be discarded for good', await page.isVisible('#idleView'));
 
 // ---------- vibration ----------
 await page.evaluate(() => { window.__vibes = []; });
@@ -1047,7 +1085,6 @@ await page.click('#menuClose');
 await page.evaluate(() => { window.__vibes = []; });
 await page.click('[data-start="L"]');
 check('no buzz once it is off', await vibes() === 0);
-page.once('dialog', d => d.accept());
 await page.click('#cancelBtn');
 
 await page.reload({ waitUntil: 'networkidle' });
@@ -1573,11 +1610,43 @@ check('Show older reaches the rest', (await lp.$$('.day')).length === 20);
 check('and stops offering once there is nothing older',
   !(await lp.textContent('#history')).includes('Show older'));
 
+/* Feeds are counted start to start, so each row says how long after the one
+   before it was. The seeded days run noon and 11am, an hour apart within a day
+   and 23 hours across the night. */
+check('a feed row says how long after the one before',
+  (await lp.textContent('#history')).includes('1h since the one before')
+  && (await lp.textContent('#history')).includes('23h since the one before'));
+check('the very first feed has nothing to be after',
+  !(await lp.$$eval('.entry', ns => !!ns[ns.length - 1].querySelector('.gap'))));
+check('every feed but the first has one, and no diaper does',
+  await lp.$$eval('.entry', ns => ns.filter(n => n.querySelector('.gap')).length === 39));
+
 /* Filtering rebuilds the list; the day count has to follow the filter. */
 await lp.click('[data-filter="diapers"]');
 check('a filtered day shows only its own total',
   (await lp.textContent('.day')).includes('1 wet · 0 dirty') && !(await lp.textContent('.day')).includes('feed'));
 await lp.click('[data-filter="all"]');
+
+/* Twenty days of table do not fit under the chart, so the report pages on. */
+await lp.click('#menuBtn');
+const [lpPdfDl] = await Promise.all([lp.waitForEvent('download'), lp.click('#exportPdf')]);
+const lpPdfPath = join(SHOTS, 'summary-long.pdf');
+await lpPdfDl.saveAs(lpPdfPath);
+const lpPdf = (await readFile(lpPdfPath)).toString('latin1');
+check('the day table carries on overleaf', lpPdf.includes('Day by day, continued'));
+check('and repeats its headings there', (lpPdf.match(/\(Left \/ Right\)/g) || []).length === 2);
+check('every day is still in the table, none dropped by the break',
+  (lpPdf.match(/\((?:Mon|Tue|Wed|Thu|Fri|Sat|Sun), [A-Z][a-z]{2} \d+\)/g) || []).length === 20);
+check('the report is titled for the days it actually covers', lpPdf.includes('20 days'));
+check('two pages, numbered', lpPdf.includes('Page 1 of 2') && lpPdf.includes('Page 2 of 2'));
+const lpOffsets = lpPdf.match(/startxref\s+(\d+)\s+%%EOF/);
+const lpHead = lpPdf.slice(+lpOffsets[1]).match(/^xref\s+0 (\d+)\s+/);
+const lpBody = lpPdf.slice(+lpOffsets[1] + lpHead[0].length);
+let lpOk = true;
+for (let n = 1; n < +lpHead[1]; n++) {
+  if (!lpPdf.startsWith(`${n} 0 obj`, +lpBody.slice(n * 20, n * 20 + 10))) lpOk = false;
+}
+check('a paged report still has a byte-exact xref', lpOk);
 await longCtx.close();
 
 // ---------- PWA ----------
@@ -1622,7 +1691,6 @@ await page.waitForTimeout(1200);
 await page.screenshot({ path: `${SHOTS}/running.png` });
 await page.click('#pauseBtn');
 await page.screenshot({ path: `${SHOTS}/paused.png` });
-page.once('dialog', d => d.accept());
 await page.click('#cancelBtn');
 
 const dark = await browser.newContext({ viewport: { width: 412, height: 980 }, deviceScaleFactor: 2, colorScheme: 'dark' });

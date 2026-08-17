@@ -69,7 +69,12 @@ Then turn on Pages:
   afterwards, so a wrong tap is recoverable. Picking **Both** in the editor gives separate
   boxes for left and right minutes plus an **Ended on** choice; picking one side gives a single
   box, since the ending side is then obvious.
-- **Forgot to hit start?** Tap **+ Add a past feeding**.
+- **Forgot to hit start?** If the feed is already under way, tap **Started 5 min earlier** under
+  the clock: it puts five minutes on the side being fed and moves the start time back with them.
+  Tap it twice for ten. For a feed that's already over, tap **+ Add a past feeding**.
+- **Changed your mind?** **Cancel without saving** discards the feeding straight away — no "are
+  you sure?" to tap through half asleep — and offers **Undo** for a few seconds afterwards, which
+  puts the timer back with all its minutes.
 - **Buzz** — the phone gives a short buzz when a feeding starts, switches sides, pauses or stops,
   so a tap in the dark is confirmed without looking. Turn it off under **Vibration** in the menu.
 
@@ -108,7 +113,8 @@ starts. Below it, the diaper and medicine cards show **how long since the last o
 diaper card adds today's wet and dirty counts.
 
 Below them, feedings, diapers and medicines share one timeline, newest first, with per-day
-totals. The **All / Feeds / Diapers / Meds** buttons narrow it to one kind when you want to read just that — the
+totals. Each feeding says **how long after the one before** it was, since that's the gap people
+ask about. The **All / Feeds / Diapers / Meds** buttons narrow it to one kind when you want to read just that — the
 day totals follow whichever view you pick, and the choice is remembered next time you open
 the app.
 
@@ -167,9 +173,12 @@ site, or by uninstalling.
 
 Tap the **⚙** button in the top-right (next to the **?**) for:
 
-- **Summary for the doctor (PDF)** — one page covering the last two weeks: feeds and minutes per
+- **Summary for the doctor (PDF)** — the last four weeks: feeds and minutes per
   day, average feed length, longest gap between feeds, wet and dirty nappies per day, a chart of
-  each day, and a day-by-day table. Medicines taken, and any notes you wrote, go on a second page. It opens the share
+  each day, and a day-by-day table, which carries on to a second page when four weeks won't fit
+  under the chart. Medicines taken, and any notes you wrote, go on the page after that. If the log is
+  younger than four weeks it covers the days it actually has, rather than padding the table with
+  empty ones. It opens the share
   sheet, so you can email it ahead of an appointment or show it on the phone.
 - **Export spreadsheet (CSV)** — feedings, diapers and medicines in one chronological sheet, with columns
   for per-side minutes, ending side, pee/poop, and poop size. Opens in Excel or Google Sheets, handy for the pediatrician.
