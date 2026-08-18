@@ -1050,22 +1050,25 @@ check('and takes it straight back off',
 check('the start comes back too', await activeStart() === startMsBefore);
 check('nothing was saved either way', await feedsNow() === before + 1);
 
-/* Cancel used to open a confirm, which is the one thing this app decided not
-   to do: at 3 a.m. it gets tapped through and the feed is gone. */
+/* There is no discarding a running feed any more. It was a full-width button
+   under Stop & Save that threw the feeding away, in the one spot a thumb rests
+   for the whole feed; a feed started by mistake is stopped and deleted from the
+   list instead. Nothing on the running card may end a feed without saving it. */
 let dialogs = 0;
 page.on('dialog', d => { dialogs++; d.accept(); });
-await page.click('#cancelBtn');
-await page.waitForTimeout(200);
-check('discarding asks nothing', dialogs === 0);
-check('the feeding is gone from the screen', await page.isVisible('#idleView'));
-check('and was not saved', await feedsNow() === before + 1);
-check('discarding offers Undo', await page.isVisible('#toastAction')
-  && await page.textContent('#toastAction') === 'Undo');
-await page.click('#toastAction');
-check('undo puts the feeding back', await page.isVisible('#runningView'));
-check('with its time still on it', toSec(await page.textContent('#elapsed')) >= shortClock);
-await page.click('#cancelBtn');
-check('and it can be discarded for good', await page.isVisible('#idleView'));
+check('no discard button on the running card', !(await page.isVisible('#cancelBtn')));
+check('and nothing offers to',
+  !(await page.textContent('#runningView')).toLowerCase().includes('without saving'));
+
+// the way out is Stop & Save and then delete, which nothing does by accident
+await page.click('#stopBtn');
+check('stopping is the only end', await feedsNow() === before + 2);
+await openRow(0);
+await page.click('#editorDelete');
+check('and a feed started by mistake is deleted from the list', await feedsNow() === before + 1);
+check('deleting offers Undo', await page.textContent('#toastAction') === 'Undo');
+check('the app asked nothing throughout', dialogs === 0);
+check('back to the idle card', await page.isVisible('#idleView'));
 
 // ---------- vibration ----------
 await page.evaluate(() => { window.__vibes = []; });
@@ -1089,7 +1092,9 @@ await page.click('#menuClose');
 await page.evaluate(() => { window.__vibes = []; });
 await page.click('[data-start="L"]');
 check('no buzz once it is off', await vibes() === 0);
-await page.click('#cancelBtn');
+await page.click('#stopBtn');
+await openRow(0);
+await page.click('#editorDelete');
 
 await page.reload({ waitUntil: 'networkidle' });
 await page.click('#menuBtn');
@@ -1419,8 +1424,8 @@ await tapThrough('#stopBtn');
 check('waking does not reach Stop & Save', await dim.isVisible('#runningView'));
 check('waking saved nothing', (await dim.$$('.entry')).length === 0);
 
-await tapThrough('#cancelBtn');
-check('waking does not reach Cancel', await dim.isVisible('#runningView'));
+await tapThrough('#pauseBtn');
+check('waking does not reach Pause', (await dim.textContent('#pauseBtn')) === 'Pause');
 check('the feed survives being woken', (await dim.evaluate(
   () => localStorage.getItem('nursinglog.active.v1'))) !== null);
 
@@ -1747,7 +1752,9 @@ await page.waitForTimeout(1200);
 await page.screenshot({ path: `${SHOTS}/running.png` });
 await page.click('#pauseBtn');
 await page.screenshot({ path: `${SHOTS}/paused.png` });
-await page.click('#cancelBtn');
+await page.click('#stopBtn');
+await openRow(0);
+await page.click('#editorDelete');
 
 const dark = await browser.newContext({ viewport: { width: 412, height: 980 }, deviceScaleFactor: 2, colorScheme: 'dark' });
 const dp = await dark.newPage();

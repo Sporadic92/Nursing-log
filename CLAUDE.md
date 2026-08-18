@@ -242,9 +242,13 @@ Interaction rules worth preserving:
   banked seconds are persisted on every switch.
 - Deleting is undoable, not confirmed. The removed record is held in the toast's closure and
   put back on Undo.
-- **Cancel without saving is undoable, and asks nothing.** It used to open a `confirm()`, which
-  is the one thing rule 4 rules out; the dialog got tapped through and the feed was gone. There
-  is no `confirm()` anywhere in the app now — don't reintroduce one.
+- **A running feed cannot be discarded, only saved.** There was a *Cancel without saving* button
+  under Stop & Save; it went because it is the wrong risk to carry in the one place a thumb rests
+  for a whole feeding — the two buttons had opposite outcomes and the lower one was unrecoverable
+  in practice. A feed started by mistake is stopped and deleted from the list, which costs a tap
+  she is awake for rather than one she isn't. Don't put it back, and don't add anything else to
+  that card that ends a feed without saving it. (There is no `confirm()` anywhere in the app
+  either, and that stays true — a dialog at 3 a.m. gets tapped through on reflex.)
 - **`Started 5 min earlier` puts the five minutes on the side the clock is on** and moves
   `start` back by the same amount, so the sum of the sides and the start-to-start gap both stay
   honest. It offers Undo, and the undo refuses if the object it captured is no longer the running
@@ -309,11 +313,11 @@ Interaction rules worth preserving:
   is what re-arms the dim. Any future full-screen overlay that dismisses itself needs the same
   treatment — hiding an overlay on pointerdown is a click-through on every mobile browser.
 - **A destructive button never sits a thumb's width under a routine one.** *Cancel without
-  saving* was 4px below Stop & Save and just as wide, so a tap landing low threw the feeding
-  away instead of keeping it; *Delete this feeding* was 10px below Save. Both are set apart now,
-  and Cancel is a narrow centred pill like the `earlierBtn` chip rather than a full-width bar.
-  Keep it that way when adding to these cards: the space below the main action is where a
-  half-asleep thumb lands.
+  saving* was 4px below Stop & Save and just as wide, so a tap landing low threw the feeding away
+  instead of keeping it — it was set apart first and then removed outright, since nothing on that
+  card should end a feed without saving it. *Delete this feeding* was 10px below Save in the
+  editors and is 22px clear of it now. The space below the main action is where a half-asleep
+  thumb lands: keep it empty, or keep what's there harmless.
 - **Undo has to be hittable.** It is the app's only way back from a mis-tap, and the toast's
   action button was 21px tall — the smallest target on screen, in a 6-second window. It carries
   a thumb-sized padding with a matching negative margin, so the target grew and the toast did
@@ -433,8 +437,8 @@ reload — that last one is the regression test for the bug this all exists for,
 the backup nudge and share path,
 the newborn basics sheet (folded on open, the diaper table, no doses, and that reading it
 leaves the log untouched),
-discarding a running feed (no dialog, and Undo puts the clock back) and the five-minute
-adjustment (on the clock, on the side, on the stored start, and taken back off),
+that a running feed cannot be discarded at all — only stopped and then deleted from the list —
+and the five-minute adjustment (on the clock, on the side, on the stored start, and taken back off),
 the feed-to-feed gaps on the rows,
 a report long enough to page on — the table carries over with its headings repeated and no day
 dropped at the break, and the continuation page's xref offsets are checked like the first's,

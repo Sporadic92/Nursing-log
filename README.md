@@ -72,9 +72,10 @@ Then turn on Pages:
 - **Forgot to hit start?** If the feed is already under way, tap **Started 5 min earlier** under
   the clock: it puts five minutes on the side being fed and moves the start time back with them.
   Tap it twice for ten. For a feed that's already over, tap **+ Add a past feeding**.
-- **Changed your mind?** **Cancel without saving** discards the feeding straight away — no "are
-  you sure?" to tap through half asleep — and offers **Undo** for a few seconds afterwards, which
-  puts the timer back with all its minutes.
+- **Started one by mistake?** Tap **Stop & Save**, then tap the feeding in the list below,
+  tap **Edit** and then **Delete this feeding**. There is no discard button on the timer any
+  more: it sat right under Stop & Save, where a thumb could catch it and throw away a feed you
+  were part-way through.
 - **Buzz** — the phone gives a short buzz when a feeding starts, switches sides, pauses or stops,
   so a tap in the dark is confirmed without looking. Turn it off under **Vibration** in the menu.
 

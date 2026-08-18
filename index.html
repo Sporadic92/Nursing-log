@@ -169,14 +169,6 @@
     background: var(--surface-2); border: 1px solid var(--line); border-radius: 999px;
   }
 
-  /* Discarding a feed used to sit 4px under Stop & Save, full width, with the
-     opposite outcome — a thumb landing low threw the feeding away. Narrow and
-     set apart, like the chip above, so it takes aiming at. */
-  #cancelBtn {
-    width: auto; display: block; margin: 18px auto 0; padding: 12px 20px;
-    border-radius: 999px; border: 1px solid var(--line);
-  }
-
   .filter { padding: 10px 6px; font-size: 15px; }
   #filterRow { margin-top: 4px; }
 
@@ -253,8 +245,8 @@
   @media (prefers-color-scheme: dark) { .btn.primary { color: #2a1b23; } }
   .btn.danger { color: var(--danger); }
   .btn.wide { grid-column: 1 / -1; }
-  /* Same reasoning as #cancelBtn: the one destructive button in a sheet does
-     not sit a thumb's width under Save. */
+  /* The one destructive button in a sheet does not sit a thumb's width under
+     Save — the space below the main action is where a half-asleep thumb lands. */
   .btn.danger.wide { margin-top: 12px; }
 
   /* A sheet opened to read a record wears .locked: same card layout, nothing live. */
@@ -409,7 +401,6 @@
       </div>
       <button class="big-btn secondary" id="pauseBtn">Pause</button>
       <button class="big-btn" id="stopBtn">Stop &amp; Save</button>
-      <button class="text-btn" id="cancelBtn">Cancel without saving</button>
     </div>
   </section>
 
@@ -803,6 +794,10 @@
      up an update yet. Add a new entry at the top whenever you ship, and bump
      CACHE in sw.js in the same commit. */
   var VERSIONS = [
+    { v: "1.20", date: "17 Aug 2026", notes: [
+      "Cancel without saving is gone from the timer. It sat right under Stop & Save with the opposite result, and it was too easy to catch by accident mid-feed.",
+      "Started one by mistake? Stop & Save it, then tap it in the list and delete it — with Undo, as ever."
+    ] },
     { v: "1.19", date: "17 Aug 2026", notes: [
       "Tapping the dark screen now fades it back gently, and taps don't count until it has gone — so the second tap that usually follows the first can't press anything.",
       "Cancel without saving is a smaller button set further below Stop & Save, instead of sitting right under it where a thumb could catch it.",
@@ -1824,25 +1819,11 @@
     }, "Resume");
   });
 
-  /* This used to ask "are you sure?", which is the one thing this app has
-     decided not to do: a dialog at 3 a.m. gets tapped through on reflex and
-     then the feed is gone for good. Discarding happens, and Undo brings the
-     clock back exactly as it was. */
-  $("cancelBtn").addEventListener("click", function () {
-    var gone = active;
-    setActive(null);
-    renderAll();
-    wakeScreen();
-
-    toast("Feeding discarded", function () {
-      if (active) { toast("A feeding is already running"); return; }
-      setActive(gone);
-      renderAll();
-      wakeScreen();
-      buzz(20);
-      toast("Back to feeding");
-    }, "Undo");
-  });
+  /* There is deliberately no way to discard a running feed. It was a button
+     under Stop & Save with the opposite outcome, in the one place a thumb
+     rests all through a feeding, and a feed started by mistake is a one-second
+     row that can be deleted from the list — which costs a tap she is awake for
+     rather than one she isn't. */
 
   /* Forgetting to tap Start is the usual reason the clock is short — the feed
      was already going. The five minutes go on the side the clock is on, which
