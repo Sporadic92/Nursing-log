@@ -129,6 +129,19 @@ Rules the code depends on:
   the whole `feeds` list rather than the visible window — the oldest row on screen still has a
   predecessor, and under the Diapers filter no feed is in `items` at all. The first feed ever
   has no gap and gets no line.
+- **Nothing is recorded before it happens, and no feeding is recorded as nothing.** All three
+  editors run `notInFuture()` (a minute of slack, for a sheet held open across the turn of a
+  minute): a mistyped date used to save a record that then sat at the top of the log as the
+  newest thing there. `agoText()` still reads a future time honestly — *in 2h* rather than *just
+  now* — because another phone's clock can be ahead and a merge is not going to ask. A feeding
+  with no minutes on either side is refused for a matching reason: it reads as "less than a
+  minute" and carries no `endSide`, so the idle card loses the side to pick up on.
+- **An undo names what it will undo by value, not by reference.** Returning to the app rebuilds
+  `active` from storage, so a closure comparing `active !== captured` refuses every time she
+  glanced at something else in between. The five-minute chip compares `active.start` against the
+  start it left behind; Stop & Save's Resume and the editors' deletes match on `id`. Anything new
+  that offers Undo has to survive `visibilitychange` the same way — that is the normal case, not
+  an edge one.
 - **A dose with no medicine named is not a record.** Nothing else identifies it, so
   `normalizeMed()` returns null and the editor refuses to save. The amount is optional: plenty
   of things are taken without one being written down.
@@ -227,6 +240,17 @@ below, because getting this wrong cost a feed. The lock is dropped
 when the feed ends and whenever the page is hidden (the browser revokes it anyway), and
 re-taken on return. `wakeScreen()` is the single entry point: call it after anything that
 starts or stops the timer.
+
+**Past `LONG_FEED_MS` (2 hours) the app hands the screen back.** A feed that has been running
+that long is one she fell asleep during far more often than it is a feed, and holding a phone
+awake until morning is the one thing this lock must not do. `feedRunningLong()` measures wall
+clock since `start`, pause included — a feed paused and forgotten leaves the same phone awake —
+and once it is true `wakeScreen()` releases the lock, drops the veil and stops re-arming the
+dim; the tick makes the handover happen without waiting for a touch, since by then nobody is
+touching it. The timer is deliberately left running: only she knows whether the feeding ended,
+and the app inventing an end is exactly the kind of guess it must not make. The running card
+says *Still feeding? This has been running 7h 30m* instead, which is the sentence that explains
+the morning.
 
 Interaction rules worth preserving:
 
@@ -421,6 +445,20 @@ Drop the `PLAYWRIGHT=` prefix if Playwright resolves from the project. The suite
 static server on a random port, drives a phone-sized Chromium through the real UI, and prints
 `PASSED n` plus a temp directory of screenshots. It fails the process on any failed check.
 
+**It takes several minutes, so don't run it after every edit.** While working on a change, write
+a throwaway probe instead: the same twenty lines of Playwright boilerplate serving this
+directory, driving only the flow being changed, printing what it found. It answers in seconds,
+it can reproduce the bug before the fix exists — which is how you know the fix is a fix — and
+the checks that survive get pasted into the suite afterwards. Run the **full suite once at the
+end**, before committing, and never push on a probe alone: the probe knows about the thing you
+just changed, and the suite is what knows about the other five hundred.
+
+Two things to remember when writing one, both of which have cost time here:
+`page.addInitScript(fn, arg)` takes **one** argument — pass an object for several, or the extras
+arrive as `undefined` and a test hook silently keeps its default. And a probe that idles while a
+feed runs will have the veil drop over the UI mid-run, so `page.click()` times out on a button
+that is plainly there: set `window.NL_DIM_MS` high, or drive the veil deliberately.
+
 It covers per-side accrual and freezing on switch, timer persistence across reload, locked
 cards staying inert under a force-tap, unlocking via Edit, editor round trips, diaper logging
 and validation, filters, day grouping and totals, CSV and JSON round trips, de-duplicated
@@ -438,7 +476,11 @@ the backup nudge and share path,
 the newborn basics sheet (folded on open, the diaper table, no doses, and that reading it
 leaves the log untouched),
 that a running feed cannot be discarded at all — only stopped and then deleted from the list —
-and the five-minute adjustment (on the clock, on the side, on the stored start, and taken back off),
+and the five-minute adjustment (on the clock, on the side, on the stored start, taken back off,
+and still undoable after the app has been left and come back to),
+a feed left running past `LONG_FEED_MS` — the screen handed back, the veil dropped, the card
+asking, and the feeding itself untouched — plus the morning-after case at the real threshold,
+that nothing can be recorded in the future and that no feeding can be saved with no minutes on it,
 the feed-to-feed gaps on the rows,
 a report long enough to page on — the table carries over with its headings repeated and no day
 dropped at the break, and the continuation page's xref offsets are checked like the first's,

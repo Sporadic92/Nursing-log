@@ -59,6 +59,7 @@ const BASE = `http://127.0.0.1:${server.address().port}/`;
 /* "Yesterday" has to move with the calendar or the suite rots overnight. */
 const ymd = ms => new Date(ms).toLocaleDateString('en-CA');   // YYYY-MM-DD, local
 const YESTERDAY = ymd(Date.now() - 86400000);
+const TOMORROW = ymd(Date.now() + 86400000);
 
 const fails = [];
 const ok = [];
@@ -250,6 +251,14 @@ await page.fill('#fRight', '0');
 await page.click('#editorSave');
 check('empty Both rejected', await page.isVisible('#editorScrim'));
 check('rejection explained', (await page.textContent('#toastText')).includes('at least one side'));
+
+/* One side with no minutes used to save: a row reading "less than a minute"
+   with no side on it, which also costs the idle card its pick-up hint. */
+await page.click('[data-pick="L"]');
+await page.fill('#fDur', '0');
+await page.click('#editorSave');
+check('a one-sided feed of no minutes is rejected too', await page.isVisible('#editorScrim'));
+check('and says what it wants', (await page.textContent('#toastText')).includes('How many minutes'));
 await page.click('#editorCancel');
 
 // ---------- manual add ----------
@@ -264,6 +273,17 @@ check('two feeds', (await page.$$('.entry')).length === 2);
 check('yesterday header', (await page.textContent('#history')).includes('Yesterday'));
 check('left only label', (await page.textContent('#history')).includes('Left only'));
 
+/* Nothing is recorded before it happens. A mistyped date used to save, sit at
+   the top of the log as the newest thing there, and read as "just now". */
+await page.click('#addManualBtn');
+await page.fill('#fDate', TOMORROW);
+await page.fill('#fDur', '15');
+await page.click('#editorSave');
+check('a feeding dated tomorrow is refused', (await page.textContent('#toastText')).includes('in the future'));
+check('and the sheet stays open', await page.isVisible('#editorScrim'));
+check('with nothing saved', (await page.$$('.entry')).length === 2);
+await page.click('#editorCancel');
+
 // ---------- diapers ----------
 // quick buttons now open the sheet rather than logging blind
 await page.click('[data-diaper="pee"]');
@@ -274,6 +294,9 @@ check('poop not preselected', !(await page.getAttribute('[data-toggle="poop"]', 
 check('no size prompt for pee', !(await page.isVisible('#sizeWrap')));
 check('nothing logged until saved', (await page.$$('.entry')).length === 2);
 
+await page.fill('#dDate', TOMORROW);
+await page.click('#diaperSave');
+check('a nappy dated tomorrow is refused', (await page.textContent('#toastText')).includes('in the future'));
 await page.click('#diaperCancel');
 check('cancel logs nothing', (await page.$$('.entry')).length === 2);
 check('diaper stat still 0', await page.textContent('#statDiapers') === '0');
@@ -568,6 +591,10 @@ check('and the editor stays open', await page.isVisible('#medScrim'));
 
 await page.selectOption('#mName', 'Ibuprofen');
 check('going back to the list hides the box', !(await page.isVisible('#mNameOtherWrap')));
+await page.fill('#mDate', TOMORROW);
+await page.click('#medSave');
+check('a dose dated tomorrow is refused', (await page.textContent('#toastText')).includes('in the future'));
+await page.fill('#mDate', ymd(Date.now()));
 await page.screenshot({ path: join(SHOTS, 'medicine-editor.png') });
 await page.selectOption('#mDose', '400 mg');
 await page.fill('#mNotes', 'For afterpains');
@@ -1050,6 +1077,30 @@ check('and takes it straight back off',
 check('the start comes back too', await activeStart() === startMsBefore);
 check('nothing was saved either way', await feedsNow() === before + 1);
 
+/* Glancing at something else and coming back used to break the undo: returning
+   rebuilds the running feed from storage, and an undo comparing object
+   references then refused — exactly when she would look back and want it. */
+await page.click('#earlierBtn');
+const addedStart = await activeStart();
+await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+await page.click('#toastAction');
+check('undo still works after leaving the app and coming back',
+  await activeStart() === addedStart + 300000);
+check('and says nothing about the feeding having moved on',
+  !(await page.textContent('#toastText')).includes('moved on'));
+
+// it still refuses when the feed running really is a different one
+await page.click('#earlierBtn');
+await page.evaluate(() => {
+  const a = JSON.parse(localStorage.getItem('nursinglog.active.v1'));
+  a.start = Date.now();          // any start but the one the undo left behind
+  localStorage.setItem('nursinglog.active.v1', JSON.stringify(a));
+  document.dispatchEvent(new Event('visibilitychange'));
+});
+await page.click('#toastAction');
+check('but refuses when the feed has genuinely moved on',
+  (await page.textContent('#toastText')).includes('moved on'));
+
 /* There is no discarding a running feed any more. It was a full-width button
    under Stop & Save that threw the feeding away, in the one spot a thumb rests
    for the whole feed; a feed started by mistake is stopped and deleted from the
@@ -1484,6 +1535,62 @@ await dim.waitForTimeout(1400);
 check('no dimming once the feed ends', !(await dim.isVisible('#dimVeil')));
 check('wake lock released with the feed', !(await dim.evaluate(() => window.__wake)).held);
 await dimCtx.close();
+
+/* ---------- a feed left running all night ----------
+   Falling asleep mid-feed is not an edge case, and the app used to answer it by
+   holding the screen on until morning. Past LONG_FEED_MS it hands the screen
+   back — the timer keeps running, since only she knows whether the feed ended. */
+const napCtx = await browser.newContext({ viewport: { width: 412, height: 915 }, hasTouch: true });
+await napCtx.addInitScript(wakeStub, 500);
+await napCtx.addInitScript(() => { window.NL_LONG_MS = 2500; });
+const nap = await napCtx.newPage();
+await nap.goto(BASE, { waitUntil: 'networkidle' });
+const napWake = () => nap.evaluate(() => window.__wake);
+
+await nap.click('[data-start="L"]');
+check('a feed starting holds the screen', (await napWake()).held);
+await nap.waitForTimeout(900);
+check('and dims while it is an ordinary feed', await nap.isVisible('#dimVeil'));
+
+await nap.waitForTimeout(3200);
+check('a feed running long gives the screen back', !(await napWake()).held);
+check('and drops the veil with it', !(await nap.isVisible('#dimVeil')));
+check('the card asks whether it is still going',
+  (await nap.textContent('#runPrompt')).includes('Still feeding?'));
+check('the feeding itself is untouched', await nap.isVisible('#runningView'));
+check('and still on the phone', (await nap.evaluate(
+  () => localStorage.getItem('nursinglog.active.v1'))) !== null);
+
+await nap.click('#pauseBtn');
+await nap.waitForTimeout(900);
+check('touching it does not take the screen back', !(await napWake()).held);
+check('nor start dimming again', !(await nap.isVisible('#dimVeil')));
+
+await nap.click('#stopBtn');
+await nap.click('[data-start="R"]');
+check('a fresh feed takes the screen again', (await napWake()).held);
+await nap.waitForTimeout(900);
+check('and dims again', await nap.isVisible('#dimVeil'));
+await napCtx.close();
+
+/* The morning after, at the real threshold: opened fresh on a feed started
+   three hours ago, it must never claim the screen for it. */
+const wokeCtx = await browser.newContext({ viewport: { width: 412, height: 915 }, hasTouch: true });
+await wokeCtx.addInitScript(wakeStub, 500);
+const woke = await wokeCtx.newPage();
+await woke.goto(BASE, { waitUntil: 'networkidle' });
+await woke.evaluate(() => localStorage.setItem('nursinglog.active.v1', JSON.stringify({
+  start: Date.now() - 3 * 3600000, side: 'L', leftSec: 0, rightSec: 0,
+  segStart: Date.now() - 3 * 3600000, paused: false })));
+await woke.reload({ waitUntil: 'networkidle' });
+check('the morning after, the card says how long it has run',
+  (await woke.textContent('#runPrompt')).includes('Still feeding?')
+  && (await woke.textContent('#runPrompt')).includes('3h'));
+await woke.waitForTimeout(1100);
+check('and the screen was never claimed for it',
+  !(await woke.evaluate(() => window.__wake)).held && !(await woke.isVisible('#dimVeil')));
+check('the clock kept the night on it', /^3:0\d:\d\d$/.test(await woke.textContent('#elapsed')));
+await wokeCtx.close();
 
 // ---------- the back gesture ----------
 /* Its own context, and a sentinel page behind the app, so "left the app" is

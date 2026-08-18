@@ -794,6 +794,11 @@
      up an update yet. Add a new entry at the top whenever you ship, and bump
      CACHE in sw.js in the same commit. */
   var VERSIONS = [
+    { v: "1.21", date: "18 Aug 2026", notes: [
+      "Fall asleep mid-feed and the app now lets the screen turn off after a couple of hours instead of staying lit all night. The timer keeps running, and the card asks whether you're still feeding.",
+      "Undo on 'Started 5 min earlier' now still works if you looked at something else in between.",
+      "A feeding can't be saved with no minutes on it, and nothing — feeding, nappy or dose — can be dated in the future by accident."
+    ] },
     { v: "1.20", date: "17 Aug 2026", notes: [
       "Cancel without saving is gone from the timer. It sat right under Stop & Save with the opposite result, and it was too easy to catch by accident mid-feed.",
       "Started one by mistake? Stop & Save it, then tap it in the list and delete it — with Undo, as ever."
@@ -1202,6 +1207,10 @@
 
   function agoText(ms) {
     var mins = Math.floor((Date.now() - ms) / 60000);
+    /* A record can be in the future — a mistyped date here, or another phone
+       whose clock is ahead — and reading that as "just now" made the card
+       describe a feeding that has not happened. */
+    if (mins < 0) return "in " + durationText(-mins);
     if (mins < 1) return "just now";
     if (mins < 60) return mins + " min ago";
     var h = Math.floor(mins / 60), m = mins % 60;
@@ -1250,6 +1259,16 @@
 
   /* Paused banks the current stretch and stops the clock, so a burp break or a
      diaper change mid-feed doesn't get counted as time on the breast. */
+  /* How long a feeding can run before the app stops holding the screen on for
+     it. Test hook, like DIM_AFTER: the suite can't wait two hours. */
+  var LONG_FEED_MS = window.NL_LONG_MS || 2 * 3600000;
+
+  /* Wall clock since it started, pause included — a feed paused and forgotten
+     is the same phone left awake all night. */
+  function feedRunningLong() {
+    return !!active && Date.now() - active.start > LONG_FEED_MS;
+  }
+
   function segSeconds() {
     if (!active || active.paused) return 0;
     return Math.max(0, Math.floor((Date.now() - active.segStart) / 1000));
@@ -1402,9 +1421,14 @@
     $("leftDot").textContent = active.side === "L" ? (active.paused ? "paused" : "● feeding") : "";
     $("rightDot").textContent = active.side === "R" ? (active.paused ? "paused" : "● feeding") : "";
     $("pauseBtn").textContent = active.paused ? "Resume" : "Pause";
-    $("runPrompt").textContent = active.paused
-      ? "Paused — Resume, or tap a side to pick up there"
-      : "Tap the other side to switch";
+    /* A feed this long is one she fell asleep during far more often than it is
+       a feed, and the clock says nothing about that on its own — 7h 30m looks
+       like any other number until you read the hours. */
+    $("runPrompt").textContent = feedRunningLong()
+      ? "Still feeding? This has been running " + gapText(Date.now() - active.start)
+      : active.paused
+        ? "Paused — Resume, or tap a side to pick up there"
+        : "Tap the other side to switch";
     var tiles = document.querySelectorAll("[data-switch]");
     for (var i = 0; i < tiles.length; i++) {
       tiles[i].classList.toggle("active", tiles[i].getAttribute("data-switch") === active.side);
@@ -1831,18 +1855,24 @@
      to the feed before stays honest. */
   $("earlierBtn").addEventListener("click", function () {
     if (!active) return;
-    var a = active, side = a.side;
-    a.start -= 300000;
-    if (side === "L") a.leftSec += 300; else a.rightSec += 300;
-    setActive(a);
+    var side = active.side;
+    active.start -= 300000;
+    if (side === "L") active.leftSec += 300; else active.rightSec += 300;
+    setActive(active);
     renderAll();
 
+    /* The feed is named by its start, not by the object holding it: coming back
+       to the app rebuilds that object from storage, and an undo that compared
+       references refused every time she glanced at something else in between —
+       which is exactly when she would look back and want the five minutes off. */
+    var stamp = active.start;
+
     toast("5 minutes added", function () {
-      if (active !== a) { toast("That feeding has moved on"); return; }
-      a.start += 300000;
-      if (side === "L") a.leftSec = Math.max(0, a.leftSec - 300);
-      else a.rightSec = Math.max(0, a.rightSec - 300);
-      setActive(a);
+      if (!active || active.start !== stamp) { toast("That feeding has moved on"); return; }
+      active.start += 300000;
+      if (side === "L") active.leftSec = Math.max(0, active.leftSec - 300);
+      else active.rightSec = Math.max(0, active.rightSec - 300);
+      setActive(active);
       renderAll();
       toast("Taken back");
     }, "Undo");
@@ -1982,6 +2012,15 @@
     return fieldsKey(dateId, timeId);
   }
 
+  /* Nothing is recorded before it happens. The only way to get a record in the
+     future is a mistyped date, and it then sits at the top of the log claiming
+     to be the most recent thing that happened. A minute of slack covers a
+     sheet held open across the turn of a minute. */
+  function notInFuture(ms) {
+    if (ms > Date.now() + 60000) { toast("That's in the future — check the date"); return false; }
+    return true;
+  }
+
   function readDateTime(dateId, timeId) {
     var dateVal = $(dateId).value, timeVal = $(timeId).value;
     if (!dateVal || !timeVal) return null;
@@ -1995,14 +2034,19 @@
       ? feedBaseMs
       : readDateTime("fDate", "fTime");
     if (start === null) { toast("Please set a date and time"); return; }
+    if (!notInFuture(start)) return;
 
     var leftMin, rightMin;
     if (editorSide === "B") { leftMin = num("fLeft"); rightMin = num("fRight"); }
     else if (editorSide === "R") { leftMin = 0; rightMin = num("fDur"); }
     else { leftMin = num("fDur"); rightMin = 0; }
 
-    if (editorSide === "B" && leftMin === 0 && rightMin === 0) {
-      toast("Add minutes for at least one side");
+    /* A feeding of no minutes is not a feeding: it reads as "less than a
+       minute" in the list and carries no side, so the idle card loses the side
+       to pick up on. The two-sided form always refused it; the one-sided one
+       used to save it. */
+    if (leftMin === 0 && rightMin === 0) {
+      toast(editorSide === "B" ? "Add minutes for at least one side" : "How many minutes was it?");
       return;
     }
 
@@ -2130,6 +2174,7 @@
       ? diaperBaseMs
       : readDateTime("dDate", "dTime");
     if (time === null) { toast("Please set a date and time"); return; }
+    if (!notInFuture(time)) return;
 
     var scrim = $("diaperScrim");
     var pee = scrim.querySelector('[data-toggle="pee"]').classList.contains("sel");
@@ -2271,6 +2316,7 @@
       ? medBaseMs
       : readDateTime("mDate", "mTime");
     if (time === null) { toast("Please set a date and time"); return; }
+    if (!notInFuture(time)) return;
 
     var record = normalizeMed({
       id: editingMedId || newId(),
@@ -3499,6 +3545,7 @@
   var DIM_AFTER = window.NL_DIM_MS || 30000;
   var dimTimer = null;
   var wakeLock = null;
+  var stoodDown = false;   /* the feed has run long and the screen is its own again */
 
   function requestWake() {
     if (!navigator.wakeLock || wakeLock) return;
@@ -3529,8 +3576,15 @@
     clearTimeout(dimTimer);
     dropVeil();
 
-    if (!active) { releaseWake(); return; }
+    if (!active) { stoodDown = false; releaseWake(); return; }
 
+    /* Past LONG_FEED_MS the app lets go of the screen: the feeding it is timing
+       is almost certainly one she fell asleep during, and holding a phone awake
+       all night is the one thing the wake lock must not do. The timer itself is
+       untouched — it keeps running, and it is still there in the morning. */
+    if (feedRunningLong()) { stoodDown = true; releaseWake(); return; }
+
+    stoodDown = false;
     requestWake();
     dimTimer = setTimeout(function () {
       if (!active || sheetOpen()) return;
@@ -3605,6 +3659,8 @@
 
     if (active) {
       tick();
+      /* She is asleep, so nothing will call wakeScreen() for us. */
+      if (!stoodDown && feedRunningLong()) wakeScreen();
       if (!$("dimVeil").hidden) paintVeil();
       return;
     }
