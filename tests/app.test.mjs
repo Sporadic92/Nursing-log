@@ -1802,9 +1802,12 @@ const lpPdfPath = join(SHOTS, 'summary-long.pdf');
 await lpPdfDl.saveAs(lpPdfPath);
 const lpPdf = (await readFile(lpPdfPath)).toString('latin1');
 check('the day table carries on overleaf', lpPdf.includes('Day by day, continued'));
-check('and repeats its headings there', (lpPdf.match(/\(Left \/ Right\)/g) || []).length === 2);
+check('and repeats its headings there',
+  (lpPdf.match(/\(Left \/ Right \\\(min\\\)\)/g) || []).length === 2);
 check('every day is still in the table, none dropped by the break',
-  (lpPdf.match(/\((?:Mon|Tue|Wed|Thu|Fri|Sat|Sun), [A-Z][a-z]{2} \d+\)/g) || []).length === 20);
+  (lpPdf.match(/\((?:Mon|Tue|Wed|Thu|Fri|Sat|Sun), [A-Z][a-z]{2} \d+(?: \\\(so far\\\))?\)/g) || []).length === 20);
+check('today is marked as the part-day it is',
+  (lpPdf.match(/\\\(so far\\\)/g) || []).length === 1);
 check('the report is titled for the days it actually covers', lpPdf.includes('20 days'));
 check('two pages, numbered', lpPdf.includes('Page 1 of 2') && lpPdf.includes('Page 2 of 2'));
 const lpOffsets = lpPdf.match(/startxref\s+(\d+)\s+%%EOF/);
@@ -1816,6 +1819,127 @@ for (let n = 1; n < +lpHead[1]; n++) {
 }
 check('a paged report still has a byte-exact xref', lpOk);
 await longCtx.close();
+
+/* ---------- the report and the part-day ----------
+
+   The appointment is in the morning, so the day the report is made on is a
+   fraction of a day. Counting it into "feeds per day" reported a slower baby
+   than the real one, which is the one number on the page most likely to be
+   read out loud. */
+const partCtx = await browser.newContext({ viewport: { width: 412, height: 915 }, hasTouch: true });
+await partCtx.addInitScript(wakeStub, 600000);
+const pt = await partCtx.newPage();
+await pt.goto(BASE, { waitUntil: 'networkidle' });
+await pt.evaluate(() => {
+  const DAY = 86400000, noon = new Date(); noon.setHours(12, 0, 0, 0);
+  const feeds = [], diapers = [];
+  /* Six finished days at a flat eight feeds each, so the average is exactly
+     8.0 — and 7.0 if today's single feed is counted in with them. */
+  for (let d = 1; d <= 6; d++) {
+    const base = noon.getTime() - d * DAY;
+    for (let i = 0; i < 8; i++) {
+      feeds.push({ id: 'p' + d + '_' + i, start: base - 6 * 3600000 + i * 3600000,
+        leftSec: 600, rightSec: 600, endSide: 'R', notes: '' });
+    }
+    for (let i = 0; i < 6; i++) {
+      diapers.push({ id: 'q' + d + '_' + i, time: base - 6 * 3600000 + i * 3600000,
+        pee: true, poop: false, notes: '' });
+    }
+  }
+  feeds.push({ id: 'ptoday', start: Date.now() - 60000, leftSec: 600, rightSec: 600,
+    endSide: 'R', notes: '' });
+  feeds.sort((a, b) => b.start - a.start);
+  diapers.sort((a, b) => b.time - a.time);
+  localStorage.setItem('nursinglog.entries.v1', JSON.stringify(feeds));
+  localStorage.setItem('nursinglog.diapers.v1', JSON.stringify(diapers));
+});
+await pt.reload({ waitUntil: 'networkidle' });
+await pt.click('#menuBtn');
+const [ptDl] = await Promise.all([pt.waitForEvent('download'), pt.click('#exportPdf')]);
+const ptPath = join(SHOTS, 'summary-partday.pdf');
+await ptDl.saveAs(ptPath);
+const ptPdf = (await readFile(ptPath)).toString('latin1');
+
+check('per-day feeds come off the finished days', ptPdf.includes('(8.0)'));
+check('and are not diluted by the part-day', !ptPdf.includes('(7.0)'));
+check('the skipped day is stated, not left to be worked out',
+  ptPdf.includes('6 full days before today'));
+check('the wet average skips it too', ptPdf.includes('(6.0)'));
+/* The table is the log, not the average — the real total still has today in it. */
+check('the total still counts every feed', ptPdf.includes('(49)'));
+check('the longest gap says which night it was', /\(Longest gap, [A-Z][a-z]{2} \d+/.test(ptPdf));
+await partCtx.close();
+
+/* A log that started this morning has no finished day to average, so it has to
+   average itself rather than divide by nothing. */
+const dayOneCtx = await browser.newContext({ viewport: { width: 412, height: 915 }, hasTouch: true });
+await dayOneCtx.addInitScript(wakeStub, 600000);
+const d1 = await dayOneCtx.newPage();
+await d1.goto(BASE, { waitUntil: 'networkidle' });
+await d1.evaluate(() => {
+  const feeds = [];
+  for (let i = 0; i < 4; i++) {
+    feeds.push({ id: 'd1_' + i, start: Date.now() - (i + 1) * 600000,
+      leftSec: 600, rightSec: 600, endSide: 'R', notes: '' });
+  }
+  localStorage.setItem('nursinglog.entries.v1', JSON.stringify(feeds));
+});
+await d1.reload({ waitUntil: 'networkidle' });
+await d1.click('#menuBtn');
+const [d1Dl] = await Promise.all([d1.waitForEvent('download'), d1.click('#exportPdf')]);
+const d1Path = join(SHOTS, 'summary-dayone.pdf');
+await d1Dl.saveAs(d1Path);
+const d1Pdf = (await readFile(d1Path)).toString('latin1');
+
+check('a first-day report averages itself rather than nothing', d1Pdf.includes('(4.0)'));
+check('and does not say "1 days"', !d1Pdf.includes('1 days'));
+check('nor claim to skip a day it does not have', !d1Pdf.includes('full days before today'));
+check('a one-day report is still a valid file', d1Pdf.startsWith('%PDF-') && d1Pdf.includes('%%EOF'));
+await dayOneCtx.close();
+
+/* The doses live on the notes page. It used to stop at the foot of one page and
+   say so, which could leave a medicine off the summary entirely. */
+const noteCtx = await browser.newContext({ viewport: { width: 412, height: 915 }, hasTouch: true });
+await noteCtx.addInitScript(wakeStub, 600000);
+const np = await noteCtx.newPage();
+await np.goto(BASE, { waitUntil: 'networkidle' });
+await np.evaluate(() => {
+  const DAY = 86400000, noon = new Date(); noon.setHours(12, 0, 0, 0);
+  const feeds = [], meds = [];
+  for (let d = 1; d <= 20; d++) {
+    const base = noon.getTime() - d * DAY;
+    feeds.push({ id: 'n' + d, start: base, leftSec: 600, rightSec: 600, endSide: 'R',
+      notes: 'Latched well on the left and fussed on the right, then needed winding twice '
+        + 'before she would settle back down again. Day ' + d + '.' });
+    meds.push({ id: 'nm' + d, time: base + 3600000, name: 'Dose number ' + d,
+      dose: '400 mg', notes: '' });
+  }
+  feeds.sort((a, b) => b.start - a.start);
+  meds.sort((a, b) => b.time - a.time);
+  localStorage.setItem('nursinglog.entries.v1', JSON.stringify(feeds));
+  localStorage.setItem('nursinglog.meds.v1', JSON.stringify(meds));
+});
+await np.reload({ waitUntil: 'networkidle' });
+await np.click('#menuBtn');
+const [npDl] = await Promise.all([np.waitForEvent('download'), np.click('#exportPdf')]);
+const npPath = join(SHOTS, 'summary-notes.pdf');
+await npDl.saveAs(npPath);
+const npPdf = (await readFile(npPath)).toString('latin1');
+
+check('the notes carry on overleaf', npPdf.includes('Notes & medicines, continued'));
+check('rather than stopping and saying so', !npPdf.includes('not shown'));
+let everyDose = true;
+for (let d = 1; d <= 20; d++) if (!npPdf.includes('Dose number ' + d)) everyDose = false;
+check('not one dose is left off the summary', everyDose);
+const npOffsets = npPdf.match(/startxref\s+(\d+)\s+%%EOF/);
+const npHead = npPdf.slice(+npOffsets[1]).match(/^xref\s+0 (\d+)\s+/);
+const npBody = npPdf.slice(+npOffsets[1] + npHead[0].length);
+let npOk = true;
+for (let n = 1; n < +npHead[1]; n++) {
+  if (!npPdf.startsWith(`${n} 0 obj`, +npBody.slice(n * 20, n * 20 + 10))) npOk = false;
+}
+check('every page of it has a byte-exact xref', npOk);
+await noteCtx.close();
 
 // ---------- PWA ----------
 check('service worker active', await page.evaluate(() => navigator.serviceWorker.ready.then(r => !!r.active).catch(() => false)));

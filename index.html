@@ -794,6 +794,11 @@
      up an update yet. Add a new entry at the top whenever you ship, and bump
      CACHE in sw.js in the same commit. */
   var VERSIONS = [
+    { v: "1.22", date: "20 Aug 2026", notes: [
+      "The doctor's summary no longer lets a half-finished day drag the averages down. Feeds and minutes per day are counted over the days that finished, and today is listed as it stands, marked 'so far' — so a morning appointment doesn't report a slower day than the baby is having.",
+      "Longest gap now says which night it was.",
+      "Notes and medicines carry on over as many pages as they need. A long month used to stop at the foot of one page, which could leave a dose off the summary."
+    ] },
     { v: "1.21", date: "18 Aug 2026", notes: [
       "Fall asleep mid-feed and the app now lets the screen turn off after a couple of hours instead of staying lit all night. The timer keeps running, and the card asks whether you're still feeding.",
       "Undo on 'Started 5 min earlier' now still works if you looked at something else in between.",
@@ -2525,21 +2530,60 @@
     });
 
     starts.sort(function (a, b) { return a - b; });
-    var gap = 0;
-    for (var i = 1; i < starts.length; i++) gap = Math.max(gap, starts[i] - starts[i - 1]);
+    /* The gap is worth more with a date on it: the question in the room is
+       which night she went longest, not just that some night she did. */
+    var gap = 0, gapFrom = 0, gapTo = 0;
+    for (var i = 1; i < starts.length; i++) {
+      if (starts[i] - starts[i - 1] <= gap) continue;
+      gap = starts[i] - starts[i - 1];
+      gapFrom = starts[i - 1];
+      gapTo = starts[i];
+    }
 
+    /* Today is half a day at best, and an appointment is usually in the
+       morning — so counting it into "per day" reports a feed rate the baby
+       isn't actually on. Averages therefore run over the days that finished;
+       the table below still shows today for what it is. */
+    var todayK = dayKey(Date.now());
     var active = 0, totals = { feeds: 0, minutes: 0, pee: 0, poop: 0 };
+    var whole = { days: 0, feeds: 0, minutes: 0, pee: 0, poop: 0 };
+    var partial = null;
     rows.forEach(function (row) {
+      row.partial = row.key === todayK;
       totals.feeds += row.feeds;
       totals.minutes += row.minutes;
       totals.pee += row.pee;
       totals.poop += row.poop;
-      if (row.feeds || row.pee || row.poop) active++;
+      var used = row.feeds || row.pee || row.poop;
+      if (used) active++;
+      if (row.partial) {
+        partial = row;
+      } else if (used) {
+        whole.days++;
+        whole.feeds += row.feeds;
+        whole.minutes += row.minutes;
+        whole.pee += row.pee;
+        whole.poop += row.poop;
+      }
     });
+
+    /* A log that only started today has no finished day to average, so it
+       averages itself rather than reporting nothing. `whole.days` is therefore
+       never zero, and it is the only denominator on the page — the old
+       `activeDays` is gone rather than left lying about as a second one to
+       divide by. */
+    if (!whole.days) {
+      whole = {
+        days: active || 1, feeds: totals.feeds, minutes: totals.minutes,
+        pee: totals.pee, poop: totals.poop
+      };
+      partial = null;
+    }
 
     return {
       rows: rows, totals: totals, from: from, to: to,
-      activeDays: active || 1, longestGapMs: gap
+      whole: whole, partial: partial,
+      longestGapMs: gap, gapFrom: gapFrom, gapTo: gapTo
     };
   }
 
@@ -2555,26 +2599,46 @@
     return new Date(ms).toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" });
   }
 
+  function dayMonth(ms) {
+    return new Date(ms).toLocaleDateString([], { month: "short", day: "numeric" });
+  }
+
+  /* The longest stretch is the thing a doctor asks about by name, and the
+     answer is half a fact without the night it happened on. A gap that ran
+     over midnight names both dates, since that is the night it belongs to. */
+  function gapLabel(d) {
+    if (!d.longestGapMs) return "Longest gap";
+    var a = dayMonth(d.gapFrom), b = dayMonth(d.gapTo);
+    return "Longest gap, " + (a === b ? a : a + " to " + b);
+  }
+
   /* Returns how many of the day rows it managed to fit, newest first. */
   function drawSummaryPage(page, data, rows) {
     var right = PDF_W - PDF_M;
-    var span = shortDay(data.from) + "  to  " + shortDay(data.to);
+    /* One day is not a span, and "1 days" is not a word. */
+    var span = data.rows.length === 1
+      ? shortDay(data.from)
+      : shortDay(data.from) + "  to  " + shortDay(data.to) +
+        "  ·  " + data.rows.length + " days";
 
     put(page, PDF_M, 52, "NURSING LOG", { size: 8, bold: true, color: ACCENT });
     put(page, right, 52, "Prepared " + shortDay(Date.now()), { size: 8, color: MUTED, align: "right" });
     put(page, PDF_M, 76, "Feeding & Diaper Summary", { size: 19, bold: true });
-    put(page, PDF_M, 92, span + "  ·  " + data.rows.length + " days", { size: 9.5, color: MUTED });
+    put(page, PDF_M, 92, span, { size: 9.5, color: MUTED });
     rule(page, PDF_M, 104, right, RULE);
 
-    /* At a glance */
-    var d = data, per = d.activeDays;
+    /* At a glance. The per-day figures come off the finished days; the two that
+       describe a feed rather than a day — how long a feed runs, and the longest
+       stretch between two of them — are not diluted by a part-day, so those
+       count everything. */
+    var d = data, w = d.whole, per = w.days;
     var tiles = [
-      ["Feeds per day", oneDp(d.totals.feeds / per)],
-      ["Time per day", hoursMins(d.totals.minutes / per)],
+      ["Feeds per day", oneDp(w.feeds / per)],
+      ["Time per day", hoursMins(w.minutes / per)],
       ["Average feed", d.totals.feeds ? Math.round(d.totals.minutes / d.totals.feeds) + " min" : "-"],
-      ["Longest gap", d.longestGapMs ? hoursMins(d.longestGapMs / 60000) : "-"],
-      ["Wet per day", oneDp(d.totals.pee / per)],
-      ["Dirty per day", oneDp(d.totals.poop / per)]
+      [gapLabel(d), d.longestGapMs ? hoursMins(d.longestGapMs / 60000) : "-"],
+      ["Wet per day", oneDp(w.pee / per)],
+      ["Dirty per day", oneDp(w.poop / per)]
     ];
 
     var gapX = 11, tileW = (right - PDF_M - gapX * 2) / 3, tileH = 50;
@@ -2586,8 +2650,19 @@
       put(page, x + 12, y + 39, tiles[i][1], { size: 17, bold: true, color: ACCENT });
     }
 
-    /* Per-day chart */
-    var top = 272, chartH = 104, base = top + chartH;
+    /* Said out loud rather than left to be inferred: a reader who notices the
+       averages skipped a day should find it already written down. */
+    if (d.partial) {
+      put(page, PDF_M, 247, "Per-day figures cover the " + d.whole.days +
+        (d.whole.days === 1 ? " full day" : " full days") +
+        " before today. Today is still under way and is listed below as it stands.",
+        { size: 8, color: MUTED });
+    }
+
+    /* Per-day chart. It starts a little lower when the caption above it is
+       there to be cleared. */
+    var top = data.partial ? 286 : 272, chartH = data.partial ? 92 : 104;
+    var base = top + chartH;
     put(page, PDF_M, top - 14, "Each day at a glance", { size: 10.5, bold: true });
 
     var legendTop = top - 21;
@@ -2628,7 +2703,7 @@
   }
 
   var TABLE_COLS = [220, 300, 356, 452, 508, 560];
-  var TABLE_HEADS = ["Feeds", "Total", "Average", "Left / Right", "Wet", "Dirty"];
+  var TABLE_HEADS = ["Feeds", "Total", "Average", "Left / Right (min)", "Wet", "Dirty"];
   var ROW_H = 18;
 
   /* The lowest baseline a day row may take. What is below belongs to the Total
@@ -2658,7 +2733,8 @@
       if ((offset + i) % 2 === 1) box(page, PDF_M - 4, lineY - 12, right - PDF_M + 8, 18, TINT);
       var quiet = !r.feeds && !r.pee && !r.poop;
       var tone = quiet ? MUTED : INK;
-      put(page, PDF_M, lineY, shortDay(r.at), { size: 9, color: tone });
+      put(page, PDF_M, lineY, shortDay(r.at) + (r.partial ? " (so far)" : ""),
+        { size: 9, color: tone });
       put(page, TABLE_COLS[0], lineY, r.feeds ? String(r.feeds) : "-", { size: 9, color: tone, align: "right" });
       put(page, TABLE_COLS[1], lineY, r.minutes ? hoursMins(r.minutes) : "-", { size: 9, color: tone, align: "right" });
       put(page, TABLE_COLS[2], lineY, r.feeds ? Math.round(r.minutes / r.feeds) + "m" : "-", { size: 9, color: tone, align: "right" });
@@ -2731,30 +2807,42 @@
     return out;
   }
 
-  function drawNotesPage(page, data, notes, number) {
+  /* Notes carry on over as many pages as they need, the way the day table
+     does. This used to stop at the foot of one page and say so — but the
+     doses live on this page, and a summary that quietly drops one of those is
+     the wrong thing to hand a doctor. Returns how many it placed. */
+  function drawNotesPage(page, data, notes, offset) {
     var right = PDF_W - PDF_M;
+    var carry = offset > 0;
     put(page, PDF_M, 52, "NURSING LOG", { size: 8, bold: true, color: ACCENT });
-    put(page, right, 52, "Page " + number, { size: 8, color: MUTED, align: "right" });
-    put(page, PDF_M, 76, "Notes & medicines", { size: 19, bold: true });
-    put(page, PDF_M, 92, "Doses taken, and anything written alongside a feeding or a change",
-      { size: 9.5, color: MUTED });
-    rule(page, PDF_M, 104, right, RULE);
+    put(page, right, 52, shortDay(data.from) + "  to  " + shortDay(data.to),
+      { size: 8, color: MUTED, align: "right" });
+    put(page, PDF_M, 76, carry ? "Notes & medicines, continued" : "Notes & medicines",
+      { size: 19, bold: true });
+    var top = 104;
+    if (!carry) {
+      put(page, PDF_M, 92, "Doses taken, and anything written alongside a feeding or a change",
+        { size: 9.5, color: MUTED });
+    } else {
+      top = 92;
+    }
+    rule(page, PDF_M, top, right, RULE);
 
-    var y = 128, textX = PDF_M + 116, wrapW = right - textX;
+    var y = top + 24, textX = PDF_M + 116, wrapW = right - textX, placed = 0;
     for (var i = 0; i < notes.length; i++) {
       var lines = wrapText(notes[i].text, wrapW, 9);
       var blockH = Math.max(lines.length * 12, 14);
-      if (y + blockH > PDF_H - 70) {
-        put(page, PDF_M, y + 6, "Later entries not shown - the full log is in the spreadsheet export.",
-          { size: 8.5, color: MUTED });
-        break;
-      }
+      /* One entry has to go on a page even if it is taller than the page,
+         or a single very long note would stall the run for ever. */
+      if (placed && y + blockH > PDF_H - 70) break;
       put(page, PDF_M, y, shortDay(notes[i].at) + ", " + clockTime(notes[i].at), { size: 8.5, color: MUTED });
       put(page, PDF_M, y + 12, notes[i].kind,
         { size: 8, color: notes[i].kind === "Diaper" ? COOL : notes[i].kind === "Medicine" ? MED : ACCENT });
       for (var l = 0; l < lines.length; l++) put(page, textX, y + l * 12, lines[l], { size: 9 });
       y += blockH + 12;
+      placed++;
     }
+    return placed;
   }
 
   function footer(page, note) {
@@ -2787,10 +2875,13 @@
       rest = rest.slice(took);
     }
 
-    if (notes.length) {
+    var left = notes;
+    while (left.length && pages.length < 12) {
       var last = pdfPage();
-      drawNotesPage(last, data, notes, pages.length + 1);
+      var wrote = drawNotesPage(last, data, left, notes.length - left.length);
       pages.push(last);
+      if (!wrote) break;
+      left = left.slice(wrote);
     }
 
     for (var i = 0; i < pages.length; i++) {

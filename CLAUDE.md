@@ -359,11 +359,28 @@ Interaction rules worth preserving:
 - **The report pages on, and the page count is not fixed.** `REPORT_DAYS` is 28, and a day table
   that long doesn't fit under the chart, so `drawDayTable()` takes only what fits above
   `TABLE_FLOOR` and hands back how many rows it drew; `buildSummaryPdf()` carries the rest onto
-  `drawTablePage()`s until they run out, and the notes page lands last with its number passed in.
-  The Total line is drawn by whichever page finishes the rows — `TABLE_FLOOR` exists to reserve
-  the space for it. Two things follow: nothing may assume the notes are page 2, and `summarise()`
-  clamps the window to `oldestRecordMs()` so a young log is its own length rather than three
-  weeks of empty rows.
+  `drawTablePage()`s until they run out, and the notes pages land last. The Total line is drawn
+  by whichever page finishes the rows — `TABLE_FLOOR` exists to reserve the space for it. Two
+  things follow: nothing may assume the notes are page 2 or that they are one page, and
+  `summarise()` clamps the window to `oldestRecordMs()` so a young log is its own length rather
+  than three weeks of empty rows.
+- **`drawNotesPage()` pages on too, and that is the point of it.** It used to stop at the foot of
+  one page and print *later entries not shown*. The doses are on that page, so what it dropped
+  could be a medicine — the one thing on the summary a doctor is most likely to be asked to read
+  back. It now takes an offset, returns how many entries it placed, and `buildSummaryPdf()` loops
+  until nothing is left. It always places at least one entry per page, or a note taller than a
+  page would never advance.
+- **The per-day figures skip today; the per-feed ones don't.** An appointment is usually in the
+  morning, so today is a fraction of a day, and counting it into *feeds per day* reported a
+  slower baby than the real one — 8 feeds a day reads as 7.5 because the export happened at
+  breakfast. `summarise()` therefore returns `whole` (totals over the days that finished and
+  have something on them) alongside `totals`, and marks today's row `partial`. The tiles divide
+  `whole`; *average feed* and *longest gap* describe a feed rather than a day, so those still
+  count everything, today included. Two things this must keep doing: a log that started today
+  has no finished day, so `whole` falls back to the whole window and `partial` goes back to null
+  — otherwise a first-day summary divides by zero; and the skipped day is stated on the page
+  under the tiles rather than left for a reader to work out. Today's table row is labelled
+  *(so far)* for the same reason.
 - **The PDF is written by hand, not by a library.** `assemblePdf()` emits objects, a byte-exact
   `xref` table and a trailer; `put`/`box`/`rule` are the only drawing primitives. Two rules keep
   it valid: the file must stay single-byte (text is stripped to ASCII, so an offset equals a
