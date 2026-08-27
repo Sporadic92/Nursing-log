@@ -101,7 +101,8 @@ await page.goto(BASE, { waitUntil: 'networkidle' });
 const openRow = async (n = 0) => {
   await (await page.$$('.entry'))[n].click();
   const edit = await page.isVisible('#editorEdit') ? '#editorEdit'
-    : await page.isVisible('#diaperEdit') ? '#diaperEdit' : null;
+    : await page.isVisible('#diaperEdit') ? '#diaperEdit'
+    : await page.isVisible('#formulaEdit') ? '#formulaEdit' : null;
   if (!edit) throw new Error('row ' + n + ' did not open a locked card');
   await page.click(edit);
 };
@@ -109,10 +110,13 @@ const openRow = async (n = 0) => {
 check('idle view', await page.isVisible('#idleView'));
 check('two start buttons', (await page.$$('[data-start]')).length === 2);
 check('empty timeline', (await page.textContent('#history')).includes('will show up here'));
+check('formula card starts empty', (await page.textContent('#formulaSince')).includes('No formula recorded yet'));
 await page.click('[data-filter="feeds"]');
 check('feeds empty state', (await page.textContent('#history')).includes('No feedings recorded yet'));
 await page.click('[data-filter="diapers"]');
 check('diapers empty state', (await page.textContent('#history')).includes('No diapers recorded yet'));
+await page.click('[data-filter="formula"]');
+check('formula empty state', (await page.textContent('#history')).includes('No formula recorded yet'));
 await page.click('[data-filter="all"]');
 
 // ---------- per-side timing ----------
@@ -437,7 +441,7 @@ await page.click('#menuBtn');
 const [csv] = await Promise.all([page.waitForEvent('download'), page.click('#exportCsv')]);
 const csvText = await (await csv.createReadStream()).toArray().then(b => Buffer.concat(b).toString());
 const csvRows = csvText.trim().split('\r\n');
-check('csv header', csvRows[0] === '"Date","Time","Type","Side","Left (min)","Right (min)","Total (min)","Ended on","Pee","Poop","Poop size","Medicine","Dose","Notes"');
+check('csv header', csvRows[0] === '"Date","Time","Type","Side","Left (min)","Right (min)","Total (min)","Ended on","Formula (oz)","Pee","Poop","Poop size","Medicine","Dose","Notes"');
 check('csv records ending side', csvText.includes('"22","0","22","Left"'));
 check('csv row per record', csvRows.length === beforeReload + 1);
 check('csv has feeding rows', csvText.includes('"Feeding"'));
@@ -518,7 +522,7 @@ const [json] = await Promise.all([page.waitForEvent('download'), page.click('#ex
 const jsonPath = join(SHOTS, 'backup.json');
 await json.saveAs(jsonPath);
 const parsed = JSON.parse(await readFile(jsonPath, 'utf8'));
-check('backup version 3', parsed.version === 3);
+check('backup version 4', parsed.version === 4);
 check('backup has feeds', parsed.entries.length === 2);
 check('backup has diapers', parsed.diapers.length === 3);
 check('backup keeps poop size', parsed.diapers.some(d => d.size === 'S'));
@@ -721,6 +725,114 @@ await page.click('#medClose');
 await page.click('[data-filter="all"]');
 check('the timeline shows feeds, diapers and doses together',
   (await page.$$('.entry')).length > 2);
+
+// ---------- formula ----------
+/* Supplementing is what this exists for: a bottle is its own record, counted
+   apart from the breastfeeding so nothing already logged changes meaning. */
+const beforeFormula = (await page.$$('.entry')).length;
+/* The breastfeeding figures have to mean exactly what they meant before a
+   bottle was ever logged, so they are read now and compared at the end. */
+const feedsBefore = await page.textContent('#statCount');
+const minutesBefore = await page.textContent('#statMinutes');
+const bottlesNow = () => page.evaluate(
+  () => JSON.parse(localStorage.getItem('nursinglog.formula.v1') || '[]').length);
+check('the card offers one button before anything is logged',
+  (await page.$$('#formulaQuick .side-btn')).length === 1);
+check('and it says what it is for',
+  (await page.textContent('#formulaQuick .side-btn')) === 'Log a bottle');
+
+await page.click('#formulaQuick .side-btn');
+check('the quick button opens the editor', await page.isVisible('#formulaScrim'));
+check('it opens on the usual bottle', await page.inputValue('#nAmount') === '2');
+check('but records nothing on its own', await bottlesNow() === 0);
+await page.click('#formulaCancel');
+check('cancelling still records nothing', await bottlesNow() === 0);
+
+await page.click('#formulaQuick .side-btn');
+await page.click('#formulaSave');
+check('a bottle saves in two taps', (await page.$$('.entry')).length === beforeFormula + 1);
+check('the card says how long ago and how much',
+  (await page.textContent('#formulaSince')).includes('2 oz'));
+check("today's bottles and ounces",
+  (await page.textContent('#formulaToday')).replace(/\s+/g, ' ').includes('1 bottle · 2 oz'));
+check('the Today card counts the ounces', await page.textContent('#statFormula') === '2');
+
+// an amount off the list, typed in
+await page.click('#addFormulaBtn');
+await page.selectOption('#nAmount', '__other__');
+check('"Something else" reveals the box', await page.isVisible('#nAmountOtherWrap'));
+await page.fill('#nAmountOther', '3.5');
+await page.click('#formulaSave');
+check('an amount off the list saves', (await page.textContent('#formulaSince')).includes('3.5 oz'));
+check('and adds to the day', await page.textContent('#statFormula') === '5.5');
+check('the quick buttons are the last two amounts',
+  (await page.$$('#formulaQuick .side-btn')).length === 3
+  && (await page.textContent('#formulaQuick .side-btn')) === '3.5 oz');
+
+// a bottle with nothing in it is not a record
+await page.click('#addFormulaBtn');
+await page.selectOption('#nAmount', '__other__');
+await page.click('#formulaSave');
+check('a bottle with no amount is refused', await page.isVisible('#formulaScrim'));
+check('and says what is missing', (await page.textContent('#toastText')).includes('How much'));
+await page.fill('#nAmountOther', '0');
+await page.click('#formulaSave');
+check('nor does zero count as an amount', await page.isVisible('#formulaScrim'));
+await page.click('#formulaCancel');
+
+// nothing may be recorded before it happens, here as anywhere
+await page.click('#addFormulaBtn');
+await page.fill('#nDate', TOMORROW);
+await page.click('#formulaSave');
+check('a bottle cannot be dated in the future', await page.isVisible('#formulaScrim'));
+await page.click('#formulaCancel');
+
+// reading one is safe; editing is a second, deliberate tap
+await page.click('[data-filter="formula"]');
+check('the formula tab shows only bottles', (await page.$$('.entry')).length === 2);
+check('and the rows say so', (await page.textContent('.entry')).includes('Formula'));
+await (await page.$$('.entry'))[0].click();
+check('a row opens a locked card', await page.isVisible('#formulaEdit'));
+check('with the amount inert', await page.isDisabled('#nAmount'));
+check('and an empty notes box hidden', await page.isHidden('#nNotesWrap'));
+check('with no way to delete from it', await page.isHidden('#formulaDelete'));
+await page.click('#formulaEdit');
+check('Edit unlocks it where it stands', !(await page.isDisabled('#nAmount')));
+await page.fill('#nNotes', 'Took it all');
+await page.click('#formulaSave');
+check('the note is kept', (await page.textContent('#history')).includes('Took it all'));
+
+// deleting offers Undo rather than a dialog
+await (await page.$$('.entry'))[0].click();
+await page.click('#formulaEdit');
+await page.click('#formulaDelete');
+check('a bottle deletes', (await page.$$('.entry')).length === 1);
+check('and offers Undo', (await page.textContent('#toastText')).includes('Bottle deleted'));
+await page.click('#toastAction');
+check('Undo puts it back', (await page.$$('.entry')).length === 2);
+check('with its note intact', (await page.textContent('#history')).includes('Took it all'));
+
+// the breastfeeding figures must mean exactly what they meant before
+await page.click('[data-filter="all"]');
+check('formula is not counted as a feed', await page.textContent('#statCount') === feedsBefore);
+check('nor into the minutes', await page.textContent('#statMinutes') === minutesBefore);
+check('the day heading counts bottles apart',
+  (await page.textContent('h2.day span')).includes('bottles'));
+check('the timeline carries all four kinds together',
+  (await page.$$('.entry')).length > beforeFormula);
+
+// it survives a reload, and rides along in the backup
+await page.reload({ waitUntil: 'networkidle' });
+check('bottles survive a reload', (await page.textContent('#statFormula')) === '5.5');
+await page.click('#menuBtn');
+const [fJson] = await Promise.all([page.waitForEvent('download'), page.click('#exportJson')]);
+const fJsonPath = join(SHOTS, 'formula-backup.json');
+await fJson.saveAs(fJsonPath);
+const fParsed = JSON.parse(await readFile(fJsonPath, 'utf8'));
+check('the backup carries formula', Array.isArray(fParsed.formula) && fParsed.formula.length === 2);
+check('as an amount in ounces', fParsed.formula.some(f => f.oz === 3.5));
+check('kept in its own list, not among the feeds',
+  fParsed.entries.every(e => e.oz === undefined));
 
 // ---------- version log ----------
 await page.click('#menuBtn');
@@ -1190,16 +1302,22 @@ await hp.click('#diaperSave');
 await hp.click('[data-start="R"]');
 await hp.waitForTimeout(1200);
 await hp.click('#stopBtn');
-check('his phone has his two records', (await hp.$$('.entry')).length === 2);
+/* A bottle is most of what the other phone actually records once formula
+   starts, so the update has to carry one. */
+await hp.click('#formulaQuick .side-btn');
+await hp.fill('#nNotes', 'Whole bottle');
+await hp.click('#formulaSave');
+check('his phone has his three records', (await hp.$$('.entry')).length === 3);
 
 await hp.click('#menuBtn');
 await hp.click('#exportUpdate');
 const msg = await hp.evaluate(() => window.__shared[0] && window.__shared[0].text);
 check('the update goes out as a message', typeof msg === 'string');
 check('no file is attached', await hp.evaluate(() => !window.__shared[0].files));
-check('it says what it is', msg.includes('2 records'));
+check('it says what it is', msg.includes('3 records'));
 check('it says what to do with it', msg.includes('Paste an update'));
 check('it carries the records', msg.includes('"diapers"') && msg.includes('"entries"'));
+check('the bottle among them', msg.includes('"formula"') && msg.includes('"oz":2'));
 check('ids are left out', !msg.includes('"id"'));
 check('empty notes are left out', (msg.match(/"notes":""/g) || []).length === 0);
 check('his note is carried', msg.includes('Leaked through'));
@@ -1237,17 +1355,18 @@ check('and the sheet stays open to try again', await page.isVisible('#pasteScrim
 
 await page.fill('#pasteBox', msg);
 await page.click('#pasteImport');
-check('his records land in her log', await feedsNow() === hers + 2);
-check('she is told how many', (await page.textContent('#toastText')).includes('Added 2 records'));
+check('his records land in her log', await feedsNow() === hers + 3);
+check('she is told how many', (await page.textContent('#toastText')).includes('Added 3 records'));
 check('the sheet closes', await page.isHidden('#pasteScrim'));
 check('his note came with it', (await page.textContent('#history')).includes('Leaked through'));
+check('his bottle came too', (await page.textContent('#history')).includes('Whole bottle'));
 
 // pasting the same message again must be a no-op, since sends overlap by design
 await page.click('#menuBtn');
 await page.click('#importPaste');
 await page.fill('#pasteBox', msg);
 await page.click('#pasteImport');
-check('the same update twice adds nothing', await feedsNow() === hers + 2);
+check('the same update twice adds nothing', await feedsNow() === hers + 3);
 check('and says so', (await page.textContent('#toastText')).includes('Nothing new'));
 
 // a record of hers must never be replaced by his version of it
@@ -1262,7 +1381,7 @@ await page.fill('#pasteBox', JSON.stringify({
   diapers: [{ time: mine.time, pee: mine.pee, poop: mine.poop, notes: 'HIS VERSION' }],
 }));
 await page.click('#pasteImport');
-check('a record she already has is left alone', await feedsNow() === hers + 2);
+check('a record she already has is left alone', await feedsNow() === hers + 3);
 check('her notes are not overwritten', await page.evaluate(() => {
   return JSON.parse(localStorage.getItem('nursinglog.diapers.v1'))[0].notes;
 }) === mine.notes);
@@ -1278,9 +1397,10 @@ check('prose around the message is ignored', (await page.textContent('#toastText
 await hisCtx.close();
 
 // clean up the two records his phone contributed — one is a nappy, one a feed
-for (let i = 0; i < 4 && await feedsNow() > hers; i++) {
+for (let i = 0; i < 6 && await feedsNow() > hers; i++) {
   await openRow(0);
-  await page.click(await page.isVisible('#editorDelete') ? '#editorDelete' : '#diaperDelete');
+  await page.click(await page.isVisible('#editorDelete') ? '#editorDelete'
+    : await page.isVisible('#formulaDelete') ? '#formulaDelete' : '#diaperDelete');
 }
 check('her log is back to her own records', await feedsNow() === hers);
 check('and unchanged by all of it', await page.textContent('#history') === herNotes);

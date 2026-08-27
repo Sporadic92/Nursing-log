@@ -2,7 +2,7 @@
 
 A simple breastfeeding tracker that installs on an Android phone like a normal app.
 Records **when** a feeding started, **how long she spent on each side**, and any **notes**,
-plus **diapers** (pee, poop, or both) and **medicines** she takes. Everything is stored on the phone — no account, no
+plus **formula** top-ups in ounces, **diapers** (pee, poop, or both) and **medicines** she takes. Everything is stored on the phone — no account, no
 internet needed after the first visit, nothing sent anywhere.
 
 ## Put it on her phone (about 5 minutes)
@@ -104,18 +104,38 @@ will leave it.
   each, so the two don't add up to the number of changes — wet and dirty are counted separately
   because that's how the wet-and-dirty table in **?** is written.
 
+### Formula
+
+The card under the feeding one is for a bottle of formula, for when you're supplementing.
+
+- Tap an amount and then **Save**. The **last two amounts you gave** sit on the card as buttons,
+  so the same bottle again is one tap and a Save. **Other** opens the form on its own.
+- The form is a list rather than a box to type in, and it opens on **2 oz**. Amounts run from
+  half an ounce up to 8 oz. If you gave something that isn't on the list, pick **Something else**
+  at the bottom and type the number of ounces — quarters are fine, so 2.75 works.
+- Tap a bottle in the list to read it back, then **Edit** to change it or delete it. Deleting
+  offers **Undo**, the same as everywhere else.
+- **+ Add a past bottle** for one you didn't log at the time.
+- The top line says **how long since the last bottle and how much it was**, and under it,
+  **how many bottles and how many ounces today**.
+
+Bottles are counted **on their own**, not folded into the breastfeeding numbers. Feeds, minutes
+and the gap between feeds all still mean exactly what they meant before — formula gets its own
+**Formula** figure in today's totals, its own tab in the filter, and its own line on each day in
+the timeline. Nothing you'd already recorded changed meaning when this was added.
+
 ### The timeline
 
 The feeding card at the top always shows two things: **how long ago the last feed started** —
 feeds are usually counted start to start — and **how long ago it finished**, which is the other
 half of the question at 3 a.m. The finished line also says which side it ended on, and the
 button for that side is highlighted and reads **pick up here**, since that's where the next feed
-starts. Below it, the diaper and medicine cards show **how long since the last one**, and the
-diaper card adds today's wet and dirty counts.
+starts. Below it, the formula, diaper and medicine cards show **how long since the last one**, and the
+formula and diaper cards add today's counts.
 
-Below them, feedings, diapers and medicines share one timeline, newest first, with per-day
-totals. Each feeding says **how long after the one before** it was, since that's the gap people
-ask about. The **All / Feeds / Diapers / Meds** buttons narrow it to one kind when you want to read just that — the
+Below them, feedings, formula, diapers and medicines share one timeline, newest first, with
+per-day totals. Each feeding says **how long after the one before** it was, since that's the gap
+people ask about. The **All / Feeds / Formula / Diapers / Meds** buttons narrow it to one kind when you want to read just that — the
 day totals follow whichever view you pick, and the choice is remembered next time you open
 the app.
 
@@ -140,7 +160,8 @@ list, pick **Something else** at the bottom and type it — it's saved exactly a
 and it will read back that way whenever you open it again. There's a notes box if you want it.
 
 Doses show in the timeline with a 💊, count in today's totals, have their own **Meds** filter,
-and go into the backup, the spreadsheet, and the doctor's summary.
+and go into the backup, the spreadsheet, and the doctor's summary. Bottles do the same with a
+🍼, and the summary adds **ounces per day** and an ounces column to its table.
 
 The app doesn't tell you when the next dose is due or what's safe to take — it only records what
 you've taken, so you can see it at a glance or show someone.

@@ -24,6 +24,7 @@
     --pee: #c99a2e;
     --poop: #8a6a4f;
     --med: #6f6a9c;
+    --formula: #4d8f8a;
     --danger: #b3261e;
     --radius: 18px;
     --safe-bottom: env(safe-area-inset-bottom, 0px);
@@ -44,6 +45,7 @@
       --pee: #e8c56a;
       --poop: #c0a184;
       --med: #b3accf;
+      --formula: #86ccc5;
       --danger: #f2b8b5;
     }
   }
@@ -116,6 +118,8 @@
   .row-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
   .row-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
   .row-4 .side-btn { font-size: 15px; padding: 16px 2px; }
+  .row-5 { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }
+  .row-5 .side-btn { font-size: 13px; padding: 16px 1px; }
 
   .side-btn {
     border: 1px solid var(--line); background: var(--surface-2); color: var(--text);
@@ -177,14 +181,14 @@
     color: var(--muted); margin-bottom: 10px; text-align: center;
   }
 
-  .stats { display: grid; grid-template-columns: repeat(4, 1fr); text-align: center; }
+  .stats { display: grid; grid-template-columns: repeat(5, 1fr); text-align: center; }
   .stats-head {
     font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em;
     color: var(--muted); text-align: center; margin-bottom: 12px;
   }
   .stats div + div { border-left: 1px solid var(--line); }
-  .stats .n { font-size: 22px; font-weight: 650; font-variant-numeric: tabular-nums; }
-  .stats .l { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+  .stats .n { font-size: 20px; font-weight: 650; font-variant-numeric: tabular-nums; }
+  .stats .l { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.02em; }
 
   h2.day {
     font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em;
@@ -212,6 +216,7 @@
   .pill.poop { background: var(--poop); font-size: 18px; }
   .pill.both-d { background: var(--poop); font-size: 13px; }
   .pill.med { background: var(--med); font-size: 18px; }
+  .pill.formula { background: var(--formula); font-size: 18px; }
   .entry .meta { flex: 1; min-width: 0; }
   .entry .time { font-weight: 600; }
   .entry .sub { font-size: 13px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -404,6 +409,15 @@
     </div>
   </section>
 
+  <!-- Formula -->
+  <section class="card">
+    <div class="since" id="formulaSince">No formula recorded yet</div>
+    <div class="since-sub" id="formulaToday" hidden></div>
+    <div class="prompt">Log formula</div>
+    <div class="row-2" id="formulaQuick"></div>
+    <button class="text-btn" id="addFormulaBtn">+ Add a past bottle</button>
+  </section>
+
   <!-- Diapers -->
   <section class="card">
     <div class="since" id="diaperSince">No diapers recorded yet</div>
@@ -431,14 +445,16 @@
     <div class="stats">
     <div><div class="n" id="statCount">0</div><div class="l">Feeds</div></div>
     <div><div class="n" id="statMinutes">0</div><div class="l">Minutes</div></div>
+    <div><div class="n" id="statFormula">0</div><div class="l">Formula</div></div>
     <div><div class="n" id="statDiapers">0</div><div class="l">Diapers</div></div>
     <div><div class="n" id="statMeds">0</div><div class="l">Doses</div></div>
     </div>
   </section>
 
-  <div class="row-4" id="filterRow">
+  <div class="row-5" id="filterRow">
     <button class="side-btn filter" data-filter="all">All</button>
     <button class="side-btn filter" data-filter="feeds">Feeds</button>
+    <button class="side-btn filter" data-filter="formula">Formula</button>
     <button class="side-btn filter" data-filter="diapers">Diapers</button>
     <button class="side-btn filter" data-filter="meds">Meds</button>
   </div>
@@ -580,13 +596,47 @@
   </div>
 </div>
 
+<!-- Formula editor -->
+<div class="scrim" id="formulaScrim" hidden>
+  <div class="sheet" role="dialog" aria-modal="true">
+    <h3 id="formulaTitle">Edit formula</h3>
+
+    <label for="nAmount">How much</label>
+    <select id="nAmount"></select>
+
+    <div id="nAmountOtherWrap" hidden>
+      <label for="nAmountOther">How many ounces?</label>
+      <input type="number" id="nAmountOther" min="0" max="40" step="0.25" inputmode="decimal"
+             placeholder="e.g. 2.5">
+    </div>
+
+    <div class="row-2">
+      <div><label for="nDate">Date</label><input type="date" id="nDate"></div>
+      <div><label for="nTime">Time</label><input type="time" id="nTime"></div>
+    </div>
+
+    <div id="nNotesWrap">
+      <label for="nNotes">Notes</label>
+      <textarea id="nNotes" placeholder="Which formula, took it all, spat up&hellip;"></textarea>
+    </div>
+
+    <div class="sheet-actions">
+      <button class="btn" id="formulaClose" hidden>Close</button>
+      <button class="btn primary" id="formulaEdit" hidden>Edit</button>
+      <button class="btn" id="formulaCancel">Cancel</button>
+      <button class="btn primary" id="formulaSave">Save</button>
+      <button class="btn danger wide" id="formulaDelete" hidden>Delete this bottle</button>
+    </div>
+  </div>
+</div>
+
 <!-- Menu -->
 <div class="scrim" id="menuScrim" hidden>
   <div class="sheet" role="dialog" aria-modal="true">
     <h3>Data &amp; backup</h3>
     <p class="backup-status" id="backupStatus"></p>
     <button class="menu-item" id="exportPdf">Summary for the doctor (PDF)<small>The last four weeks, ready to share</small></button>
-    <button class="menu-item" id="exportCsv">Export spreadsheet (CSV)<small>Feedings and diapers, for Excel or Google Sheets</small></button>
+    <button class="menu-item" id="exportCsv">Export spreadsheet (CSV)<small>Feedings, formula and diapers, for Excel or Google Sheets</small></button>
     <button class="menu-item" id="exportJson">Save backup file<small id="exportJsonHint">Send it to Drive, email, or wherever you keep files</small></button>
     <button class="menu-item" id="importJson">Restore from backup<small>Adds anything missing from a backup file</small></button>
     <button class="menu-item" id="exportUpdate">Send an update<small id="updateHint">The last few days as a message, to text to the other phone</small></button>
@@ -670,6 +720,7 @@
   var FEEDS_KEY = "nursinglog.entries.v1";
   var DIAPERS_KEY = "nursinglog.diapers.v1";
   var MEDS_KEY = "nursinglog.meds.v1";
+  var FORMULA_KEY = "nursinglog.formula.v1";
   var ACTIVE_KEY = "nursinglog.active.v1";
   var FILTER_KEY = "nursinglog.filter.v1";
   var BACKUP_KEY = "nursinglog.backup.v1";
@@ -687,6 +738,15 @@
   var MED_NAME_DEFAULT = "Ibuprofen";
   var MED_DOSE_DEFAULT = "400 mg";
   var MED_OTHER = "__other__";
+
+  /* Supplementing means the same couple of amounts over and over, so the
+     amount is a list rather than a box to type in: two ounces is the opening
+     state and needs no typing at all. Anything not listed goes in through
+     "Something else" and is stored like any other. Ounces throughout — the
+     figure on the tin and the marks on the bottle are the same unit. */
+  var FORMULA_OZ = [0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 5, 6, 8];
+  var FORMULA_OZ_DEFAULT = 2;
+  var FORMULA_MAX_OZ = 40;
 
   /* The reference behind the ? button: ordinary newborn guidance, the kind that
      is easy to lose track of at 4 a.m. It is plain text and nothing reads her
@@ -794,6 +854,13 @@
      up an update yet. Add a new entry at the top whenever you ship, and bump
      CACHE in sw.js in the same commit. */
   var VERSIONS = [
+    { v: "1.23", date: "27 Aug 2026", notes: [
+      "Formula is now recorded too. There's a new card under the feeding one: tap an amount and Save. The last two amounts you gave sit there as buttons, so the same bottle again is one tap.",
+      "Today's row counts the ounces, and each day in the list says how many bottles and how much.",
+      "A new Formula tab in the filter shows just the bottles.",
+      "Breastfeeding numbers are unchanged — formula is counted on its own, so nothing you've already recorded means anything different now.",
+      "The doctor's summary adds ounces per day and an ounces column, and formula rides along in the backup, the spreadsheet and the update you send to the other phone."
+    ] },
     { v: "1.22", date: "20 Aug 2026", notes: [
       "The doctor's summary no longer lets a half-finished day drag the averages down. Feeds and minutes per day are counted over the days that finished, and today is listed as it stands, marked 'so far' — so a morning appointment doesn't report a slower day than the baby is having.",
       "Longest gap now says which night it was.",
@@ -1107,9 +1174,33 @@
     };
   }
 
+  /* A bottle is { id, time, oz, notes }. Nothing identifies it but the amount
+     and when it was given, so a bottle with nothing in it is not a record —
+     the same line normalizeMed draws around a dose with no medicine named.
+     Quarter-ounce steps because that is as fine as a bottle is marked. */
+  function normalizeFormula(f) {
+    if (!f || typeof f.time !== "number") return null;
+    var oz = typeof f.oz === "number" ? f.oz : parseFloat(f.oz);
+    if (!isFinite(oz) || oz <= 0) return null;
+    oz = Math.round(Math.min(oz, FORMULA_MAX_OZ) * 4) / 4;
+    if (oz <= 0) return null;
+    return {
+      id: f.id || newId(),
+      time: f.time,
+      oz: oz,
+      notes: typeof f.notes === "string" ? f.notes : ""
+    };
+  }
+
+  /* Trailing zeros read as false precision on a bottle: 2 oz, not 2.00 oz. */
+  function ozText(oz) {
+    return (Math.round(oz * 100) / 100) + " oz";
+  }
+
   function loadFeeds() { return readList(FEEDS_KEY, normalizeFeed); }
   function loadDiapers() { return readList(DIAPERS_KEY, normalizeDiaper); }
   function loadMeds() { return readList(MEDS_KEY, normalizeMed); }
+  function loadFormula() { return readList(FORMULA_KEY, normalizeFormula); }
 
   /* Memory follows storage, not the other way round: if the write is refused,
      the list on screen keeps matching what is actually on the phone. */
@@ -1131,6 +1222,13 @@
     list.sort(function (a, b) { return b.time - a.time; });
     if (!writeList(MEDS_KEY, list)) return false;
     meds = list;
+    return true;
+  }
+
+  function saveFormula(list) {
+    list.sort(function (a, b) { return b.time - a.time; });
+    if (!writeList(FORMULA_KEY, list)) return false;
+    formula = list;
     return true;
   }
 
@@ -1167,6 +1265,7 @@
   var feeds = loadFeeds();
   var diapers = loadDiapers();
   var meds = loadMeds();
+  var formula = loadFormula();
   var active = loadActive();
   var filter = localStorage.getItem(FILTER_KEY) || "all";
 
@@ -1176,7 +1275,9 @@
      3 a.m., and reaching further back is a deliberate thing to do. */
   var HISTORY_DAYS = 14;
   var historyDays = HISTORY_DAYS;
-  if (filter !== "feeds" && filter !== "diapers" && filter !== "meds") filter = "all";
+  if (filter !== "feeds" && filter !== "formula" && filter !== "diapers" && filter !== "meds") {
+    filter = "all";
+  }
 
   /* ---------------- formatting ---------------- */
 
@@ -1286,11 +1387,11 @@
 
   /* Every sheet lives here. The veil logic and the back gesture both read this
      list, so a new sheet is registered once rather than in two places. */
-  var SHEETS = ["editorScrim", "diaperScrim", "medScrim", "menuScrim", "logScrim",
-                "guideScrim", "pasteScrim", "rescueScrim"];
+  var SHEETS = ["editorScrim", "diaperScrim", "medScrim", "formulaScrim", "menuScrim",
+                "logScrim", "guideScrim", "pasteScrim", "rescueScrim"];
 
-  /* The three that hold fields. Reading one is safe to dismiss; editing one is not. */
-  var EDITORS = ["editorScrim", "diaperScrim", "medScrim"];
+  /* The four that hold fields. Reading one is safe to dismiss; editing one is not. */
+  var EDITORS = ["editorScrim", "diaperScrim", "medScrim", "formulaScrim"];
 
   function sheetOpen() {
     for (var i = 0; i < SHEETS.length; i++) {
@@ -1545,6 +1646,81 @@
     host.appendChild(other);
   }
 
+  /* Today's bottles and ounces, walked the way the nappy counts are: back to
+     midnight only, since this runs on the tick and a log months long is not
+     something to cross once a second. */
+  function todayFormula() {
+    var midnight = new Date(Date.now());
+    midnight.setHours(0, 0, 0, 0);
+    var from = midnight.getTime(), key = dayKey(Date.now()), c = { count: 0, oz: 0 };
+    for (var i = 0; i < formula.length; i++) {
+      if (formula[i].time < from) break;
+      if (dayKey(formula[i].time) !== key) continue;
+      c.count++;
+      c.oz += formula[i].oz;
+    }
+    c.oz = Math.round(c.oz * 100) / 100;
+    return c;
+  }
+
+  /* The two most recent amounts, so the same bottle again is one tap. */
+  function recentFormula() {
+    var seen = {}, out = [];
+    for (var i = 0; i < formula.length && out.length < 2; i++) {
+      var key = String(formula[i].oz);
+      if (seen[key]) continue;
+      seen[key] = true;
+      out.push(formula[i].oz);
+    }
+    return out;
+  }
+
+  /* Split out for the same reason renderMedSince is: this is the part that has
+     to keep ticking, and rebuilding the card once a second would swap the quick
+     buttons out from under a thumb already on its way down. */
+  function renderFormulaSince() {
+    var last = formula[0];
+    $("formulaSince").innerHTML = last
+      ? "Last formula <b>" + agoText(last.time) + "</b> &middot; " + ozText(last.oz)
+      : "No formula recorded yet";
+
+    var today = $("formulaToday");
+    today.hidden = !formula.length;
+    if (today.hidden) return;
+    var c = todayFormula();
+    today.innerHTML = c.count
+      ? "Today <b>" + c.count + "</b> " + (c.count === 1 ? "bottle" : "bottles") +
+        " &middot; <b>" + c.oz + "</b> oz"
+      : "None yet today";
+  }
+
+  function renderFormulaCard() {
+    renderFormulaSince();
+
+    var host = $("formulaQuick");
+    host.textContent = "";
+
+    var recent = recentFormula();
+    host.className = recent.length > 1 ? "row-3" : "row-2";
+
+    recent.forEach(function (oz) {
+      var btn = document.createElement("button");
+      btn.className = "side-btn";
+      btn.type = "button";
+      btn.textContent = ozText(oz);
+      btn.addEventListener("click", function () { openFormulaEditor(null, oz, false); });
+      host.appendChild(btn);
+    });
+
+    var other = document.createElement("button");
+    other.className = "side-btn";
+    other.type = "button";
+    other.textContent = !recent.length ? "Log a bottle"
+      : recent.length > 1 ? "Other" : "Something else";
+    other.addEventListener("click", function () { openFormulaEditor(null, null, false); });
+    host.appendChild(other);
+  }
+
   function renderStats() {
     var today = dayKey(Date.now());
     var count = 0, minutes = 0, dcount = 0, mcount = 0;
@@ -1552,6 +1728,7 @@
     feeds.forEach(function (e) {
       if (dayKey(e.start) === today) { count++; minutes += feedMinutes(e); }
     });
+    var fToday = todayFormula();
     diapers.forEach(function (d) {
       if (dayKey(d.time) === today) dcount++;
     });
@@ -1561,6 +1738,7 @@
 
     $("statCount").textContent = count;
     $("statMinutes").textContent = minutes;
+    $("statFormula").textContent = fToday.oz;
     $("statDiapers").textContent = dcount;
     $("statMeds").textContent = mcount;
   }
@@ -1582,6 +1760,9 @@
     if (filter === "all" || filter === "feeds") {
       feeds.forEach(function (e) { items.push({ kind: "feed", at: e.start, data: e }); });
     }
+    if (filter === "all" || filter === "formula") {
+      formula.forEach(function (f) { items.push({ kind: "formula", at: f.time, data: f }); });
+    }
     if (filter === "all" || filter === "diapers") {
       diapers.forEach(function (d) { items.push({ kind: "diaper", at: d.time, data: d }); });
     }
@@ -1596,9 +1777,10 @@
       var p = document.createElement("div");
       p.className = "empty";
       p.textContent = filter === "feeds" ? "No feedings recorded yet."
+        : filter === "formula" ? "No formula recorded yet."
         : filter === "diapers" ? "No diapers recorded yet."
         : filter === "meds" ? "No medicine recorded yet."
-        : "Feedings, diapers and medicines you record will show up here.";
+        : "Feedings, formula, diapers and medicines you record will show up here.";
       host.appendChild(p);
       return;
     }
@@ -1621,9 +1803,13 @@
       var key = dayKey(item.at);
       item.day = key;
       var t = totals[key];
-      if (!t) { t = totals[key] = { feeds: 0, minutes: 0, diapers: 0, wet: 0, dirty: 0, meds: 0 }; days.push(key); }
+      if (!t) {
+        t = totals[key] = { feeds: 0, minutes: 0, bottles: 0, oz: 0, diapers: 0, wet: 0, dirty: 0, meds: 0 };
+        days.push(key);
+      }
       if (item.kind === "feed") { t.feeds++; t.minutes += feedMinutes(item.data); }
       else if (item.kind === "med") t.meds++;
+      else if (item.kind === "formula") { t.bottles++; t.oz += item.data.oz; }
       else {
         t.diapers++;
         if (item.data.pee) t.wet++;
@@ -1651,6 +1837,12 @@
         var sum = document.createElement("span");
         var parts = [];
         if (t.feeds) parts.push(t.feeds + (t.feeds === 1 ? " feed" : " feeds") + " · " + t.minutes + " min");
+        /* Bottles and ounces both: how often she topped up and how much are
+           different questions, and the doctor's summary asks both too. */
+        if (t.bottles) {
+          parts.push(t.bottles + (t.bottles === 1 ? " bottle" : " bottles") +
+            " · " + (Math.round(t.oz * 100) / 100) + " oz");
+        }
         /* A day is read as wet and dirty rather than as a number of changes,
            which is also how the PDF's table puts it. A zero stays on screen:
            no dirty nappy all day is the half worth seeing. */
@@ -1681,6 +1873,13 @@
         line1.textContent = clockTime(e.start) + " · " + durationText(feedMinutes(e));
         line2.textContent = feedSubText(e);
         row.addEventListener("click", function () { openFeedEditor(e.id, true); });
+      } else if (item.kind === "formula") {
+        var f = item.data;
+        pill.className = "pill formula";
+        pill.textContent = "🍼";
+        line1.textContent = clockTime(f.time) + " · " + ozText(f.oz);
+        line2.textContent = "Formula";
+        row.addEventListener("click", function () { openFormulaEditor(f.id, null, true); });
       } else if (item.kind === "med") {
         var m = item.data;
         pill.className = "pill med";
@@ -1737,6 +1936,7 @@
     renderFeedCard();
     renderDiaperCard();
     renderMedCard();
+    renderFormulaCard();
     renderStats();
     renderHistory();
     renderBackupStatus();
@@ -2358,6 +2558,123 @@
     });
   });
 
+  /* ---------------- formula editor ---------------- */
+
+  var editingFormulaId = null;
+  var formulaBaseMs = 0, formulaBaseKey = "";
+
+  /* Same rule the medicine lists follow: an amount already on a record that is
+     not one of the offered ones becomes an option of its own, so opening a
+     bottle to read it can never quietly change what it says. */
+  function fillOzChoices(id, value) {
+    var sel = $(id);
+    var all = value && FORMULA_OZ.indexOf(value) < 0 ? [value].concat(FORMULA_OZ) : FORMULA_OZ;
+
+    sel.textContent = "";
+    all.forEach(function (v) { sel.appendChild(medOption(String(v), ozText(v))); });
+    sel.appendChild(medOption(MED_OTHER, "Something else…"));
+
+    sel.value = String(value);
+  }
+
+  function formulaChoice() {
+    var picked = $("nAmount").value;
+    return picked === MED_OTHER ? parseFloat($("nAmountOther").value) : parseFloat(picked);
+  }
+
+  /* The box to type in appears only while "Something else" is the choice, and
+     never while reading: the list itself carries the amount then. */
+  function syncFormulaOther() {
+    var reading = $("formulaScrim").querySelector(".sheet").classList.contains("locked");
+    $("nAmountOtherWrap").hidden = reading || $("nAmount").value !== MED_OTHER;
+  }
+
+  function lockFormula(on) {
+    setLocked("formulaScrim", on, {
+      close: "formulaClose", edit: "formulaEdit", cancel: "formulaCancel",
+      save: "formulaSave", del: "formulaDelete",
+      notes: "nNotesWrap", notesField: "nNotes", existing: !!editingFormulaId
+    });
+    syncFormulaOther();
+  }
+
+  /* preset is an amount in ounces, coming from a quick button: it fills the
+     form, it does not record anything. */
+  function openFormulaEditor(id, preset, locked) {
+    var f = findById(formula, "id", id);
+
+    editingFormulaId = f ? f.id : null;
+
+    $("formulaTitle").textContent = !f ? (preset ? "Log formula" : "Add a bottle")
+      : locked ? "Formula"
+      : "Edit formula";
+
+    formulaBaseMs = f ? f.time : Date.now();
+    formulaBaseKey = fillDateTime("nDate", "nTime", formulaBaseMs);
+
+    fillOzChoices("nAmount", f ? f.oz : preset ? preset : FORMULA_OZ_DEFAULT);
+    $("nAmountOther").value = "";
+    $("nNotes").value = f ? f.notes : "";
+
+    lockFormula(!!locked);
+    showSheet("formulaScrim");
+  }
+
+  $("nAmount").addEventListener("change", function () {
+    syncFormulaOther();
+    if (!$("nAmountOther").parentNode.hidden) $("nAmountOther").focus();
+  });
+
+  $("addFormulaBtn").addEventListener("click", function () { openFormulaEditor(null, null, false); });
+  $("formulaClose").addEventListener("click", function () { hideSheet("formulaScrim"); });
+  $("formulaCancel").addEventListener("click", function () { hideSheet("formulaScrim"); });
+
+  $("formulaEdit").addEventListener("click", function () {
+    $("formulaTitle").textContent = "Edit formula";
+    lockFormula(false);
+  });
+
+  $("formulaSave").addEventListener("click", function () {
+    var time = fieldsKey("nDate", "nTime") === formulaBaseKey
+      ? formulaBaseMs
+      : readDateTime("nDate", "nTime");
+    if (time === null) { toast("Please set a date and time"); return; }
+    if (!notInFuture(time)) return;
+
+    var record = normalizeFormula({
+      id: editingFormulaId || newId(),
+      time: time,
+      oz: formulaChoice(),
+      notes: $("nNotes").value.trim()
+    });
+    if (!record) { toast("How much did the baby take?"); return; }
+
+    var list = formula.filter(function (f) { return f.id !== editingFormulaId; });
+    list.push(record);
+    if (!saveFormula(list)) return;
+
+    hideSheet("formulaScrim");
+    renderAll();
+    toast("Saved " + ozText(record.oz));
+  });
+
+  $("formulaDelete").addEventListener("click", function () {
+    var gone = findById(formula, "id", editingFormulaId);
+    if (!gone) return;
+
+    if (!saveFormula(formula.filter(function (f) { return f.id !== gone.id; }))) return;
+    hideSheet("formulaScrim");
+    renderAll();
+
+    toast("Bottle deleted", function () {
+      var list = formula.slice();
+      list.push(gone);
+      if (!saveFormula(list)) return;
+      renderAll();
+      toast("Bottle restored");
+    });
+  });
+
   /* ---------------- doctor's summary (PDF) ---------------- */
 
   /* A PDF is just text, so this writes one directly rather than pulling in a
@@ -2375,6 +2692,7 @@
   var TINT = [0.965, 0.945, 0.953];
   var COOL = [0.42, 0.55, 0.68];
   var MED = [0.44, 0.42, 0.61];
+  var FORM = [0.3, 0.56, 0.54];
 
   function pdfNum(n) { return String(Math.round(n * 100) / 100); }
 
@@ -2504,7 +2822,7 @@
       when.setDate(start.getDate() + d);
       var row = {
         key: dayKey(when.getTime()), at: when.getTime(),
-        feeds: 0, minutes: 0, leftMin: 0, rightMin: 0, pee: 0, poop: 0
+        feeds: 0, minutes: 0, leftMin: 0, rightMin: 0, bottles: 0, oz: 0, pee: 0, poop: 0
       };
       rows.push(row);
       index[row.key] = row;
@@ -2528,6 +2846,13 @@
       if (x.pee) row.pee++;
       if (x.poop) row.poop++;
     });
+    formula.forEach(function (f) {
+      if (f.time < from || f.time > to) return;
+      var row = index[dayKey(f.time)];
+      if (!row) return;
+      row.bottles++;
+      row.oz += f.oz;
+    });
 
     starts.sort(function (a, b) { return a - b; });
     /* The gap is worth more with a date on it: the question in the room is
@@ -2545,16 +2870,18 @@
        isn't actually on. Averages therefore run over the days that finished;
        the table below still shows today for what it is. */
     var todayK = dayKey(Date.now());
-    var active = 0, totals = { feeds: 0, minutes: 0, pee: 0, poop: 0 };
-    var whole = { days: 0, feeds: 0, minutes: 0, pee: 0, poop: 0 };
+    var active = 0, totals = { feeds: 0, minutes: 0, bottles: 0, oz: 0, pee: 0, poop: 0 };
+    var whole = { days: 0, feeds: 0, minutes: 0, bottles: 0, oz: 0, pee: 0, poop: 0 };
     var partial = null;
     rows.forEach(function (row) {
       row.partial = row.key === todayK;
       totals.feeds += row.feeds;
       totals.minutes += row.minutes;
+      totals.bottles += row.bottles;
+      totals.oz += row.oz;
       totals.pee += row.pee;
       totals.poop += row.poop;
-      var used = row.feeds || row.pee || row.poop;
+      var used = row.feeds || row.bottles || row.pee || row.poop;
       if (used) active++;
       if (row.partial) {
         partial = row;
@@ -2562,6 +2889,8 @@
         whole.days++;
         whole.feeds += row.feeds;
         whole.minutes += row.minutes;
+        whole.bottles += row.bottles;
+        whole.oz += row.oz;
         whole.pee += row.pee;
         whole.poop += row.poop;
       }
@@ -2575,6 +2904,7 @@
     if (!whole.days) {
       whole = {
         days: active || 1, feeds: totals.feeds, minutes: totals.minutes,
+        bottles: totals.bottles, oz: totals.oz,
         pee: totals.pee, poop: totals.poop
       };
       partial = null;
@@ -2640,6 +2970,13 @@
       ["Wet per day", oneDp(w.pee / per)],
       ["Dirty per day", oneDp(w.poop / per)]
     ];
+    /* Only when there is formula in the window. A log with no bottles in it
+       should not carry two tiles of zeros, and the page is laid out from the
+       count rather than around a fixed two rows. */
+    if (d.totals.bottles) {
+      tiles.push(["Formula per day", oneDp(w.oz / per) + " oz"]);
+      tiles.push(["Bottles per day", oneDp(w.bottles / per)]);
+    }
 
     var gapX = 11, tileW = (right - PDF_M - gapX * 2) / 3, tileH = 50;
     for (var i = 0; i < tiles.length; i++) {
@@ -2649,11 +2986,12 @@
       put(page, x + 12, y + 19, tiles[i][0], { size: 8.5, color: MUTED });
       put(page, x + 12, y + 39, tiles[i][1], { size: 17, bold: true, color: ACCENT });
     }
+    var tilesBottom = 120 + Math.ceil(tiles.length / 3) * (tileH + gapX) - gapX;
 
     /* Said out loud rather than left to be inferred: a reader who notices the
        averages skipped a day should find it already written down. */
     if (d.partial) {
-      put(page, PDF_M, 247, "Per-day figures cover the " + d.whole.days +
+      put(page, PDF_M, tilesBottom + 16, "Per-day figures cover the " + d.whole.days +
         (d.whole.days === 1 ? " full day" : " full days") +
         " before today. Today is still under way and is listed below as it stands.",
         { size: 8, color: MUTED });
@@ -2661,7 +2999,7 @@
 
     /* Per-day chart. It starts a little lower when the caption above it is
        there to be cleared. */
-    var top = data.partial ? 286 : 272, chartH = data.partial ? 92 : 104;
+    var top = tilesBottom + (data.partial ? 55 : 41), chartH = data.partial ? 92 : 104;
     var base = top + chartH;
     put(page, PDF_M, top - 14, "Each day at a glance", { size: 10.5, bold: true });
 
@@ -2704,6 +3042,10 @@
 
   var TABLE_COLS = [220, 300, 356, 452, 508, 560];
   var TABLE_HEADS = ["Feeds", "Total", "Average", "Left / Right (min)", "Wet", "Dirty"];
+  /* Squeezed to make room for the ounces, and only used when there are any:
+     a log with no bottles keeps the roomier columns it has always had. */
+  var TABLE_COLS_OZ = [206, 276, 330, 424, 462, 512, 560];
+  var TABLE_HEADS_OZ = ["Feeds", "Total", "Average", "Left / Right (min)", "Oz", "Wet", "Dirty"];
   var ROW_H = 18;
 
   /* The lowest baseline a day row may take. What is below belongs to the Total
@@ -2717,9 +3059,12 @@
   function drawDayTable(page, d, rows, offset, top) {
     var right = PDF_W - PDF_M;
 
+    var oz = !!d.totals.bottles;
+    var cols = oz ? TABLE_COLS_OZ : TABLE_COLS, heads = oz ? TABLE_HEADS_OZ : TABLE_HEADS;
+
     put(page, PDF_M, top, "Date", { size: 8, bold: true, color: MUTED });
-    for (var i = 0; i < TABLE_HEADS.length; i++) {
-      put(page, TABLE_COLS[i], top, TABLE_HEADS[i], { size: 8, bold: true, color: MUTED, align: "right" });
+    for (var i = 0; i < heads.length; i++) {
+      put(page, cols[i], top, heads[i], { size: 8, bold: true, color: MUTED, align: "right" });
     }
     rule(page, PDF_M, top + 6, right, RULE);
 
@@ -2731,16 +3076,21 @@
       /* Striped on the row's place in the whole table, so the banding carries
          across the page break rather than restarting. */
       if ((offset + i) % 2 === 1) box(page, PDF_M - 4, lineY - 12, right - PDF_M + 8, 18, TINT);
-      var quiet = !r.feeds && !r.pee && !r.poop;
+      var quiet = !r.feeds && !r.bottles && !r.pee && !r.poop;
       var tone = quiet ? MUTED : INK;
+      var n = 0;
       put(page, PDF_M, lineY, shortDay(r.at) + (r.partial ? " (so far)" : ""),
         { size: 9, color: tone });
-      put(page, TABLE_COLS[0], lineY, r.feeds ? String(r.feeds) : "-", { size: 9, color: tone, align: "right" });
-      put(page, TABLE_COLS[1], lineY, r.minutes ? hoursMins(r.minutes) : "-", { size: 9, color: tone, align: "right" });
-      put(page, TABLE_COLS[2], lineY, r.feeds ? Math.round(r.minutes / r.feeds) + "m" : "-", { size: 9, color: tone, align: "right" });
-      put(page, TABLE_COLS[3], lineY, r.feeds ? r.leftMin + " / " + r.rightMin : "-", { size: 9, color: tone, align: "right" });
-      put(page, TABLE_COLS[4], lineY, r.pee ? String(r.pee) : "-", { size: 9, color: tone, align: "right" });
-      put(page, TABLE_COLS[5], lineY, r.poop ? String(r.poop) : "-", { size: 9, color: tone, align: "right" });
+      put(page, cols[n++], lineY, r.feeds ? String(r.feeds) : "-", { size: 9, color: tone, align: "right" });
+      put(page, cols[n++], lineY, r.minutes ? hoursMins(r.minutes) : "-", { size: 9, color: tone, align: "right" });
+      put(page, cols[n++], lineY, r.feeds ? Math.round(r.minutes / r.feeds) + "m" : "-", { size: 9, color: tone, align: "right" });
+      put(page, cols[n++], lineY, r.feeds ? r.leftMin + " / " + r.rightMin : "-", { size: 9, color: tone, align: "right" });
+      if (oz) {
+        put(page, cols[n++], lineY, r.oz ? String(Math.round(r.oz * 100) / 100) : "-",
+          { size: 9, color: tone, align: "right" });
+      }
+      put(page, cols[n++], lineY, r.pee ? String(r.pee) : "-", { size: 9, color: tone, align: "right" });
+      put(page, cols[n++], lineY, r.poop ? String(r.poop) : "-", { size: 9, color: tone, align: "right" });
       lineY += ROW_H;
     }
 
@@ -2748,10 +3098,14 @@
     if (take === rows.length) {
       rule(page, PDF_M, lineY - 10, right, RULE);
       put(page, PDF_M, lineY + 4, "Total", { size: 9, bold: true });
-      put(page, TABLE_COLS[0], lineY + 4, String(d.totals.feeds), { size: 9, bold: true, align: "right" });
-      put(page, TABLE_COLS[1], lineY + 4, hoursMins(d.totals.minutes), { size: 9, bold: true, align: "right" });
-      put(page, TABLE_COLS[4], lineY + 4, String(d.totals.pee), { size: 9, bold: true, align: "right" });
-      put(page, TABLE_COLS[5], lineY + 4, String(d.totals.poop), { size: 9, bold: true, align: "right" });
+      put(page, cols[0], lineY + 4, String(d.totals.feeds), { size: 9, bold: true, align: "right" });
+      put(page, cols[1], lineY + 4, hoursMins(d.totals.minutes), { size: 9, bold: true, align: "right" });
+      if (oz) {
+        put(page, cols[4], lineY + 4, String(Math.round(d.totals.oz * 100) / 100),
+          { size: 9, bold: true, align: "right" });
+      }
+      put(page, cols[oz ? 5 : 4], lineY + 4, String(d.totals.pee), { size: 9, bold: true, align: "right" });
+      put(page, cols[oz ? 6 : 5], lineY + 4, String(d.totals.poop), { size: 9, bold: true, align: "right" });
     }
 
     return take;
@@ -2796,6 +3150,11 @@
         out.push({ at: x.time, kind: "Diaper", text: x.notes });
       }
     });
+    formula.forEach(function (f) {
+      if (f.notes && f.time >= data.from && f.time <= data.to) {
+        out.push({ at: f.time, kind: "Formula", text: ozText(f.oz) + " - " + f.notes });
+      }
+    });
     meds.forEach(function (m) {
       if (m.time < data.from || m.time > data.to) return;
       out.push({
@@ -2837,7 +3196,10 @@
       if (placed && y + blockH > PDF_H - 70) break;
       put(page, PDF_M, y, shortDay(notes[i].at) + ", " + clockTime(notes[i].at), { size: 8.5, color: MUTED });
       put(page, PDF_M, y + 12, notes[i].kind,
-        { size: 8, color: notes[i].kind === "Diaper" ? COOL : notes[i].kind === "Medicine" ? MED : ACCENT });
+        { size: 8, color: notes[i].kind === "Diaper" ? COOL
+          : notes[i].kind === "Medicine" ? MED
+          : notes[i].kind === "Formula" ? FORM
+          : ACCENT });
       for (var l = 0; l < lines.length; l++) put(page, textX, y + l * 12, lines[l], { size: 9 });
       y += blockH + 12;
       placed++;
@@ -2996,6 +3358,10 @@
       var d = diapers[diapers.length - 1].time;
       oldest = oldest ? Math.min(oldest, d) : d;
     }
+    if (formula.length) {
+      var f = formula[formula.length - 1].time;
+      oldest = oldest ? Math.min(oldest, f) : f;
+    }
     return oldest;
   }
 
@@ -3048,7 +3414,7 @@
   }
 
   $("exportPdf").addEventListener("click", function () {
-    if (!feeds.length && !diapers.length) { toast("Nothing to summarise yet"); return; }
+    if (!feeds.length && !diapers.length && !formula.length) { toast("Nothing to summarise yet"); return; }
     var bytes = buildSummaryPdf();
     var blob = new Blob([bytes], { type: "application/pdf" });
     shareBlob("nursing-log-summary-" + stamp() + ".pdf", blob, "application/pdf");
@@ -3056,14 +3422,15 @@
   });
 
   $("exportCsv").addEventListener("click", function () {
-    if (!feeds.length && !diapers.length) { toast("Nothing to export yet"); return; }
+    if (!feeds.length && !diapers.length && !formula.length) { toast("Nothing to export yet"); return; }
 
-    var rows = [["Date", "Time", "Type", "Side", "Left (min)", "Right (min)", "Total (min)", "Ended on", "Pee", "Poop", "Poop size", "Medicine", "Dose", "Notes"]];
+    var rows = [["Date", "Time", "Type", "Side", "Left (min)", "Right (min)", "Total (min)", "Ended on", "Formula (oz)", "Pee", "Poop", "Poop size", "Medicine", "Dose", "Notes"]];
 
     var items = [];
     feeds.forEach(function (e) { items.push({ at: e.start, kind: "feed", data: e }); });
     diapers.forEach(function (d) { items.push({ at: d.time, kind: "diaper", data: d }); });
     meds.forEach(function (m) { items.push({ at: m.time, kind: "med", data: m }); });
+    formula.forEach(function (f) { items.push({ at: f.time, kind: "formula", data: f }); });
     items.sort(function (a, b) { return a.at - b.at; });
 
     items.forEach(function (item) {
@@ -3075,14 +3442,18 @@
         var e = item.data;
         rows.push([date, time, "Feeding", SIDE_NAME[feedSide(e)],
           minutesOf(e.leftSec), minutesOf(e.rightSec), feedMinutes(e),
-          e.endSide ? SIDE_NAME[e.endSide] : "", "", "", "", "", "", e.notes]);
+          e.endSide ? SIDE_NAME[e.endSide] : "", "", "", "", "", "", "", e.notes]);
       } else if (item.kind === "med") {
         var m = item.data;
-        rows.push([date, time, "Medicine", "", "", "", "", "", "", "", "",
+        rows.push([date, time, "Medicine", "", "", "", "", "", "", "", "", "",
           m.name, m.dose, m.notes]);
+      } else if (item.kind === "formula") {
+        var f = item.data;
+        rows.push([date, time, "Formula", "", "", "", "", "", f.oz,
+          "", "", "", "", "", f.notes]);
       } else {
         var d = item.data;
-        rows.push([date, time, "Diaper", "", "", "", "", "",
+        rows.push([date, time, "Diaper", "", "", "", "", "", "",
           d.pee ? "Yes" : "", d.poop ? "Yes" : "",
           d.size ? SIZE_NAME[d.size] : "", "", "", d.notes]);
       }
@@ -3096,11 +3467,12 @@
   $("exportJson").addEventListener("click", function () {
     var payload = {
       app: "nursing-log",
-      version: 3,
+      version: 4,
       exported: new Date().toISOString(),
       entries: feeds,
       diapers: diapers,
-      meds: meds
+      meds: meds,
+      formula: formula
     };
     deliver("nursing-log-backup-" + stamp() + ".json", JSON.stringify(payload, null, 2),
       "application/json", markBackedUp);
@@ -3115,9 +3487,13 @@
   LIST_NAME[FEEDS_KEY] = "feedings";
   LIST_NAME[DIAPERS_KEY] = "diapers";
   LIST_NAME[MEDS_KEY] = "medicines";
+  LIST_NAME[FORMULA_KEY] = "formula";
 
   function listFor(key) {
-    return key === FEEDS_KEY ? feeds : key === DIAPERS_KEY ? diapers : meds;
+    return key === FEEDS_KEY ? feeds
+      : key === DIAPERS_KEY ? diapers
+      : key === FORMULA_KEY ? formula
+      : meds;
   }
 
   function rescueKeys() {
@@ -3302,6 +3678,12 @@
     return out;
   }
 
+  function compactFormula(f) {
+    var out = { time: f.time, oz: f.oz };
+    if (f.notes) out.notes = f.notes;
+    return out;
+  }
+
   function countText(n) {
     return n + (n === 1 ? " record" : " records");
   }
@@ -3310,14 +3692,16 @@
     var since = Date.now() - UPDATE_DAYS * 86400000;
     var payload = {
       app: "nursing-log",
-      version: 3,
+      version: 4,
       exported: new Date().toISOString(),
       entries: feeds.filter(function (e) { return e.start >= since; }).map(compactFeed),
       diapers: diapers.filter(function (d) { return d.time >= since; }).map(compactDiaper),
-      meds: meds.filter(function (m) { return m.time >= since; }).map(compactMed)
+      meds: meds.filter(function (m) { return m.time >= since; }).map(compactMed),
+      formula: formula.filter(function (f) { return f.time >= since; }).map(compactFormula)
     };
 
-    var count = payload.entries.length + payload.diapers.length + payload.meds.length;
+    var count = payload.entries.length + payload.diapers.length + payload.meds.length +
+      payload.formula.length;
     if (!count) { toast("Nothing logged in the last " + UPDATE_DAYS + " days"); return; }
 
     shareText(
@@ -3384,7 +3768,9 @@
     var inFeeds = Array.isArray(data) ? data : data.entries;
     var inDiapers = data.diapers;
     var inMeds = data.meds;
-    if (!Array.isArray(inFeeds) && !Array.isArray(inDiapers) && !Array.isArray(inMeds)) {
+    var inFormula = data.formula;
+    if (!Array.isArray(inFeeds) && !Array.isArray(inDiapers) && !Array.isArray(inMeds) &&
+        !Array.isArray(inFormula)) {
       return null;
     }
 
@@ -3436,6 +3822,24 @@
         freshM++;
       });
       if (saveMeds(mList)) added += freshM;
+    }
+
+    /* Keyed on when and how much, like every other list: two phones mint their
+       own ids, so content is the only thing they can agree on. */
+    if (Array.isArray(inFormula)) {
+      var seenN = {}, freshN = 0;
+      formula.forEach(function (f) { seenN[f.time + "|" + f.oz] = true; });
+      var nList = formula.slice();
+      inFormula.forEach(function (raw) {
+        var f = normalizeFormula(raw);
+        if (!f) return;
+        var key = f.time + "|" + f.oz;
+        if (seenN[key]) return;
+        seenN[key] = true;
+        nList.push(f);
+        freshN++;
+      });
+      if (saveFormula(nList)) added += freshN;
     }
 
     return added;
@@ -3761,6 +4165,7 @@
     renderFeedCard();
     renderDiaperCard();
     renderMedSince();
+    renderFormulaSince();
   }, 1000);
 
   document.addEventListener("visibilitychange", function () {
@@ -3768,6 +4173,7 @@
     feeds = loadFeeds();
     diapers = loadDiapers();
     meds = loadMeds();
+    formula = loadFormula();
     active = loadActive();
     shownDay = dayKey(Date.now());
     renderAll();

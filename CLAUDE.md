@@ -11,8 +11,8 @@ Guidance for Claude Code working in this repository.
 
 ## What this is
 
-A breastfeeding, diaper and medicine tracker used on an Android phone at all hours, often
-one-handed and half-asleep. It is a single-page web app installed to the home screen as a PWA,
+A breastfeeding, formula, diaper and medicine tracker used on an Android phone at all hours,
+often one-handed and half-asleep. It is a single-page web app installed to the home screen as a PWA,
 not a native app.
 
 **Her phone holds the log.** The owner runs the same app on his phone to record what he does —
@@ -88,14 +88,15 @@ These come from how the app is actually used. Check any change against them.
 
 ## Data model
 
-Three independent lists plus a live-timer slot, all in `localStorage`:
+Four independent lists plus a live-timer slot, all in `localStorage`:
 
 ```
 nursinglog.entries.v1   feedings
 nursinglog.diapers.v1   diapers
 nursinglog.meds.v1      medicine doses
+nursinglog.formula.v1   formula bottles
 nursinglog.active.v1    the feeding currently being timed, or absent
-nursinglog.filter.v1    "all" | "feeds" | "diapers" | "meds" — the timeline view
+nursinglog.filter.v1    "all" | "feeds" | "formula" | "diapers" | "meds" — the timeline view
 nursinglog.backup.v1    epoch ms of the last backup, for the nudge
 nursinglog.haptics.v1   "off" turns the buzz off; anything else (or absent) is on
 nursinglog.rescue.*     text a list could not be read from, set aside verbatim
@@ -116,6 +117,10 @@ diaper  = { id, time,        // epoch ms
 med     = { id, time,        // epoch ms
             name,            // trimmed, required — "Ibuprofen"
             dose,            // may be "" — "400 mg"
+            notes }
+
+bottle  = { id, time,        // epoch ms
+            oz,              // ounces, > 0, to the quarter — 2.5
             notes }
 
 active  = { start, side,     // "L" | "R"
@@ -167,6 +172,25 @@ Rules the code depends on:
   start it left behind; Stop & Save's Resume and the editors' deletes match on `id`. Anything new
   that offers Undo has to survive `visibilitychange` the same way — that is the normal case, not
   an edge one.
+- **Formula is counted apart from breastfeeding, never folded into it.** A bottle is its own
+  list and its own record; `feedMinutes()`, the feeds-per-day figures and the start-to-start gap
+  on a feed row all mean exactly what they meant before 1.23. This was the choice made when
+  formula was asked for, and it is the one that keeps months of already-recorded feeds honest:
+  fold bottles into "feeds" and every number in the log — and in every summary already handed to
+  a doctor — quietly changes meaning retroactively. The timeline day heading, the Today card, the
+  filter row and the PDF all carry formula as a figure of its own for the same reason wet and
+  dirty nappies are counted apart.
+- **A bottle with nothing in it is not a record.** `normalizeFormula()` returns null for a
+  missing, zero or unparseable amount and the editor refuses to save, the same line
+  `normalizeMed()` draws around a dose with no medicine named — the amount and the time are the
+  whole of what identifies a bottle. Ounces throughout, rounded to the quarter, because that is
+  as fine as a bottle is marked; `ozText()` is the one place that renders one, so a stored 2 reads
+  as *2 oz* rather than *2.00 oz*.
+- **The amount is a plain number, even though the editor picks it from `FORMULA_OZ`.** As with
+  `MED_NAMES`, the list is a way to type less rather than a set of valid values: "Something else"
+  stores whatever is typed, and an amount already on a record that is not on the list gets added
+  as an option of its own (`fillOzChoices()`), so opening a bottle to read it can never quietly
+  change what it says.
 - **A dose with no medicine named is not a record.** Nothing else identifies it, so
   `normalizeMed()` returns null and the editor refuses to save. The amount is optional: plenty
   of things are taken without one being written down.
@@ -188,7 +212,8 @@ Rules the code depends on:
   ending it into thin air, the editors keep their sheet open, and `mergeRecords()` counts only
   what landed. The save functions update the in-memory list *after* a successful write, so what
   is on screen keeps matching what is on the phone.
-- **Everything is normalized on read.** `normalizeFeed` / `normalizeDiaper` / `normalizeMed`
+- **Everything is normalized on read.** `normalizeFeed` / `normalizeDiaper` / `normalizeMed` /
+  `normalizeFormula`
   are the single migration point, and also run on save and on import, so one function defines a valid record.
   Older feedings stored `{ minutes, side }`; those migrate on read, with `B` split evenly.
 
@@ -199,11 +224,17 @@ Bump the storage keys only with a migration in place — real data lives behind 
 Top to bottom: feeding card (idle: two lines — when the last feed *started* and when it
 *finished*, since feeds are counted start to start but time off the breast is the other half of
 the question — plus Left/Right start buttons; running: total elapsed, a live per-side tile each,
-Pause, Stop & Save, and a **Started 5 min earlier** chip under the clock), diaper card (time
-since last, today's wet and dirty counts, + Pee / Poop / Both), medicine card (time
-since last dose + up to two recent medicines as one-tap buttons, plus a way to log something
-else), today's stats, `All / Feeds / Diapers / Meds` filter, then the timeline grouped by day
-with per-day totals.
+Pause, Stop & Save, and a **Started 5 min earlier** chip under the clock), formula card (time
+since the last bottle and how much it was, today's bottles and ounces, + up to two recent amounts
+as one-tap buttons), diaper card (time since last, today's wet and dirty counts, + Pee / Poop /
+Both), medicine card (time since last dose + up to two recent medicines as one-tap buttons, plus
+a way to log something else), today's stats, `All / Feeds / Formula / Diapers / Meds` filter,
+then the timeline grouped by day with per-day totals.
+
+The formula card is built as a copy of the medicine one, deliberately: quick buttons derived
+from the log rather than stored, an amount picked from a list rather than typed, and an editor
+that the quick button opens pre-filled rather than writing a record. Anything that is true of
+the medicine card should stay true of this one.
 
 The idle card points at the side the last feed ended on — that is where the next one picks up —
 by giving that button the `sel` accent and the words *pick up here*. `pickUpSide()` decides it
@@ -222,8 +253,8 @@ that adds another fortnight. The window isn't stored: a fresh open starts at the
 which is what is wanted at 3 a.m., and reaching further back is a deliberate thing to do. The
 CSV, the PDF and the backup are unaffected — they always cover everything.
 
-Eight bottom sheets: the **feeding editor**, the **diaper editor**, the **medicine editor**, the
-**menu** (PDF summary, CSV export, JSON backup, restore, send an update, paste an update, what's
+Nine bottom sheets: the **feeding editor**, the **diaper editor**, the **medicine editor**, the
+**formula editor**, the **menu** (PDF summary, CSV export, JSON backup, restore, send an update, paste an update, what's
 new, about, vibration), the **version log**, the **newborn basics**, **paste an update**, and
 **unreadable data**.
 
@@ -247,8 +278,13 @@ Reading and editing a record are the *same sheet*. A row tap opens its editor wi
 unselected ones dimmed, the field borders dropped so the values read as text, and Close/Edit in
 place of Cancel/Save/Delete. **Edit** unlocks it where it stands. Optional rows that are empty
 (notes, poop size, dose) are hidden while locked, so reading never shows a blank box. `setLocked()`
-drives all of it and all three editors go through it — a new editor should too, and any new field
+drives all of it and all four editors go through it — a new editor should too, and any new field
 must be inside the sheet so it gets disabled with the rest (it disables `input, select, textarea`).
+
+The formula editor's amount is a `<select>` for the same reasons, opening on **2 oz** so the
+usual bottle is one tap on Save; `FORMULA_OZ` runs 0.5–8 oz and ends in *Something else*, which
+reveals `#nAmountOtherWrap` — a number box in quarter-ounce steps. `syncFormulaOther()` shows and
+hides it and keeps it hidden while reading, since the list carries the value then.
 
 The medicine editor's two fields are `<select>`s: the medicine and the amount, opening on
 **Ibuprofen** and **400 mg** so the usual dose is one tap on Save. Amounts run 200–1000 mg in
@@ -381,6 +417,14 @@ Interaction rules worth preserving:
   notes shifted its time backward by up to 59s. Both editors remember the exact instant they
   opened with (`feedBaseMs` / `diaperBaseMs`) and reuse it when the fields are untouched. Any
   new editor needs the same treatment.
+- **The summary page is laid out from the tile count, not around two rows of three.** Formula
+  adds two tiles — *Formula per day* and *Bottles per day* — but only when the window actually
+  holds a bottle, so a log with no formula in it keeps the page it has always had. `tilesBottom`
+  is computed from `Math.ceil(tiles.length / 3)` and the caption, the chart and the table all
+  hang off it; nothing may go back to hardcoding y=247 or y=272, or a third tile row lands on top
+  of the chart. The day table gains an ounces column the same way, through `TABLE_COLS_OZ` /
+  `TABLE_HEADS_OZ` rather than by widening the columns every report has to live with — the
+  columns are indexed off `cols` so both shapes walk the same code.
 - **The report pages on, and the page count is not fixed.** `REPORT_DAYS` is 28, and a day table
   that long doesn't fit under the chart, so `drawDayTable()` takes only what fits above
   `TABLE_FLOOR` and hands back how many rows it drew; `buildSummaryPdf()` carries the rest onto
@@ -431,6 +475,7 @@ Interaction rules worth preserving:
   the allowlist.
 - **Import only ever adds, and matches on content rather than id.** `mergeRecords()` keys a
   feeding by `start|leftSec|rightSec`, a nappy by `time|pee|poop`, a dose by `time|name|dose`,
+  a bottle by `time|oz`,
   and skips anything it already has — so a record she wrote can never be replaced by another
   phone's version of it, and re-sending the same days is free. Ids play no part, which is what
   lets two phones mint their own without coordinating. Both the file restore and the pasted
@@ -445,10 +490,13 @@ Interaction rules worth preserving:
   rebuilding `renderMedCard()` every second swaps the quick buttons out from under a thumb that
   is already on its way down. The same tick compares `shownDay` and redraws the totals and day
   headings when the date changes, since midnight lands mid-feed often enough to matter.
-- **`visibilitychange` rereads every list.** It reloads feeds, diapers, meds and the active timer.
-  Meds were missed at first — add new lists here.
+- **`visibilitychange` rereads every list.** It reloads feeds, diapers, meds, formula and the
+  active timer. Meds were missed at first — add new lists here. `oldestRecordMs()`, `listFor()`,
+  `LIST_NAME` and the tick's "how long ago" pass are the other four places a new list has to be
+  named; the tick refreshes `renderFormulaSince()` rather than the card, for the reason the
+  medicine line does.
 - **A sent update is a backup file with fewer records and its defaults stripped.** `compactFeed`
-  / `compactDiaper` / `compactMed` drop ids, empty notes and a derivable `end` — every one of
+  / `compactDiaper` / `compactMed` / `compactFormula` drop ids, empty notes and a derivable `end` — every one of
   them something `normalize*` puts back — so it stays the same format rather than becoming a
   second one, and stays small enough to text. Anything added to a record needs a decision here:
   carry it, or prove normalize can rebuild it.
@@ -504,11 +552,16 @@ that is plainly there: set `window.NL_DIM_MS` high, or drive the veil deliberate
 It covers per-side accrual and freezing on switch, timer persistence across reload, locked
 cards staying inert under a force-tap, unlocking via Edit, editor round trips, diaper logging
 and validation, filters, day grouping and totals, CSV and JSON round trips, de-duplicated
-restore, migration of the older format, medicine logging and its editor, wake lock and dimming,
+restore, migration of the older format, medicine logging and its editor,
+formula — the quick buttons deriving from the log and recording nothing on their own, an amount
+off the list, a bottle with no amount and one dated tomorrow both refused, the locked card, the
+delete and its Undo, the ounces surviving a reload and riding along in the backup, and — the one
+that matters most — that the feeds and minutes on the Today card are untouched by any of it,
+wake lock and dimming,
 pausing (including that the clock stays frozen across a reload, and that the break never reaches
 the total), taking a Stop & Save back, the suggested pick-up side, the buzz and its off switch,
-the two-phone update — a second browser context logs records, shares a message, and the first
-pastes it in, then checks that a second paste adds nothing and that a record of hers is left
+the two-phone update — a second browser context logs records, a bottle among them, shares a
+message, and the first pastes it in, then checks that a second paste adds nothing and that a record of hers is left
 untouched when his version of it arrives,
 unreadable data in four shapes (text that won't parse, JSON that isn't a list, one bad record
 among good ones, and a copy that can't be made because storage refuses the write), each in its
@@ -564,8 +617,18 @@ Look at the screenshots too. Layout problems pass assertions and still look wron
 
 Not oversights — raise them before building:
 
-- No pumping, weight, sleep, or bottle tracking. Scope is what she asked for. (Medicines were
-  added in 1.9 because she asked for them — ibuprofen after the hospital. That is the bar.)
+- No pumping, weight or sleep tracking. Scope is what she asked for. (Medicines were added in
+  1.9 because she asked for them — ibuprofen after the hospital. Formula was added in 1.23 the
+  same way, when they started supplementing. That is the bar: someone asked, for something they
+  are actually doing.)
+- Formula is recorded, expressed milk is not. A bottle is an amount in ounces and nothing else —
+  no brand, no what-was-in-it, no bottle-vs-breast attribution beyond the two lists being
+  separate. If expressed milk is ever asked for, it is a field on the bottle record and not a
+  fifth list, and it must not disturb the rule above about formula being counted apart.
+- No feeding advice, and none for formula either: no ounces-per-day target, no "she should be
+  taking more", no arithmetic against the baby's weight or age. The app records what was given
+  and how much; what a baby should be taking is the pediatrician's to say. This is the same line
+  the medicine card and the basics sheet hold, and formula is where it will be tempting to cross.
 - No dosing advice, maximums, or "next dose due" arithmetic. The app shows what was taken and
   how long ago; deciding what is safe is not its job. The newborn basics sheet (1.11) holds to
   the same line: general guidance she could read anywhere, no numbers to take a medicine by,
