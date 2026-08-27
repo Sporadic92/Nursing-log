@@ -111,6 +111,7 @@ check('idle view', await page.isVisible('#idleView'));
 check('two start buttons', (await page.$$('[data-start]')).length === 2);
 check('empty timeline', (await page.textContent('#history')).includes('will show up here'));
 check('formula card starts empty', (await page.textContent('#formulaSince')).includes('No formula recorded yet'));
+check('no combined fed line before there is any formula', await page.isHidden('#fedSince'));
 await page.click('[data-filter="feeds"]');
 check('feeds empty state', (await page.textContent('#history')).includes('No feedings recorded yet'));
 await page.click('[data-filter="diapers"]');
@@ -757,6 +758,14 @@ check("today's bottles and ounces",
   (await page.textContent('#formulaToday')).replace(/\s+/g, ' ').includes('1 bottle · 2 oz'));
 check('the Today card counts the ounces', await page.textContent('#statFormula') === '2');
 
+/* Once bottles are in the picture, "when did the baby last eat" is the question
+   being asked, and the breast-only clocks below do not answer it. */
+check('a combined "last fed" line appears', await page.isVisible('#fedSince'));
+check('it names the bottle as the most recent',
+  (await page.textContent('#fedSince')).includes('bottle'));
+check('the breast-only line is still there and still breast-only',
+  (await page.textContent('#sinceText')).includes('Last feed started'));
+
 // an amount off the list, typed in
 await page.click('#addFormulaBtn');
 await page.selectOption('#nAmount', '__other__');
@@ -821,8 +830,21 @@ check('the day heading counts bottles apart',
 check('the timeline carries all four kinds together',
   (await page.$$('.entry')).length > beforeFormula);
 
+// a breastfeed newer than the bottle takes the line back over
+await page.click('[data-start="L"]');
+await page.waitForTimeout(1100);
+await page.click('#stopBtn');
+check('a newer breastfeed takes the line back',
+  (await page.textContent('#fedSince')).includes('breast'));
+await (await page.$$('.entry'))[0].click();
+await page.click('#editorEdit');
+await page.click('#editorDelete');
+check('and the bottle has it again once that feed goes',
+  (await page.textContent('#fedSince')).includes('bottle'));
+
 // it survives a reload, and rides along in the backup
 await page.reload({ waitUntil: 'networkidle' });
+check('the combined line survives a reload', await page.isVisible('#fedSince'));
 check('bottles survive a reload', (await page.textContent('#statFormula')) === '5.5');
 await page.click('#menuBtn');
 const [fJson] = await Promise.all([page.waitForEvent('download'), page.click('#exportJson')]);

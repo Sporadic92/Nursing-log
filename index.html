@@ -107,6 +107,9 @@
   .since b { color: var(--text); font-weight: 600; }
   .since-sub { text-align: center; color: var(--muted); font-size: 13px; margin-top: 3px; }
   .since-sub b { color: var(--text); font-weight: 600; }
+  /* The one that answers "when did she last eat", so it leads and the
+     breast-only clocks below it read as the detail they are. */
+  .fed-line { font-size: 17px; margin-bottom: 6px; }
   .elapsed {
     text-align: center; font-size: 52px; font-weight: 300; letter-spacing: -0.02em;
     font-variant-numeric: tabular-nums; margin: 4px 0 2px;
@@ -377,6 +380,7 @@
   <!-- Feeding -->
   <section class="card">
     <div id="idleView">
+      <div class="since fed-line" id="fedSince" hidden></div>
       <div class="since" id="sinceText">No feedings recorded yet</div>
       <div class="since-sub" id="sinceEnd" hidden></div>
       <div class="prompt">Start a feeding</div>
@@ -854,6 +858,10 @@
      up an update yet. Add a new entry at the top whenever you ship, and bump
      CACHE in sw.js in the same commit. */
   var VERSIONS = [
+    { v: "1.24", date: "27 Aug 2026", notes: [
+      "The feeding card now leads with how long since the baby last ate — whichever way it came — and says whether it was breast or a bottle. The two lines under it still describe the breastfeeding on its own.",
+      "It only shows once there's formula in the log, so nothing changes if you're not supplementing."
+    ] },
     { v: "1.23", date: "27 Aug 2026", notes: [
       "Formula is now recorded too. There's a new card under the feeding one: tap an amount and Save. The last two amounts you gave sit there as buttons, so the same bottle again is one tap.",
       "Today's row counts the ounces, and each day in the list says how many bottles and how much.",
@@ -1470,6 +1478,32 @@
     }
   }
 
+  /* When the baby last ate, whichever way it came. The two lines below this one
+     are about the breast alone — feeds counted start to start, and time off it —
+     and neither answers the question actually asked at 3 a.m. once bottles are in
+     the picture. Feeds are dated by their start, matching the line under it.
+
+     It says which kind it was rather than only how long ago, because "fed 20
+     minutes ago" means something different for a bottle than for a breast, and
+     it only appears once there is formula in the log: a log with no bottles in
+     it keeps the card it has always had. This is recall, not arithmetic — no
+     figure anywhere is counted differently for it. */
+  function lastFedAt() {
+    var f = feeds[0], b = formula[0];
+    if (!f && !b) return null;
+    if (!b) return { at: f.start, kind: "breast" };
+    if (!f) return { at: b.time, kind: "bottle" };
+    return f.start >= b.time ? { at: f.start, kind: "breast" } : { at: b.time, kind: "bottle" };
+  }
+
+  function renderFedSince() {
+    var line = $("fedSince");
+    var last = formula.length ? lastFedAt() : null;
+    line.hidden = !last;
+    if (!last) return;
+    line.innerHTML = "Last fed <b>" + agoText(last.at) + "</b> &middot; " + last.kind;
+  }
+
   function renderFeedCard() {
     if (active) {
       $("idleView").hidden = true;
@@ -1492,6 +1526,7 @@
       }
       markSuggestedSide(last ? pickUpSide(last) : null);
     }
+    renderFedSince();
   }
 
   /* The side she finished on is where the next feed picks up, so the idle card

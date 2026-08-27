@@ -126,6 +126,11 @@ the timeline. Nothing you'd already recorded changed meaning when this was added
 
 ### The timeline
 
+Once you're logging formula, the feeding card leads with **how long ago the baby last ate** and
+**whether it was breast or a bottle** — that's usually the thing you actually want to know at
+3 a.m., and the two lines under it are about the breastfeeding on its own. If you're not
+supplementing, that line never appears and the card is exactly as it was.
+
 The feeding card at the top always shows two things: **how long ago the last feed started** —
 feeds are usually counted start to start — and **how long ago it finished**, which is the other
 half of the question at 3 a.m. The finished line also says which side it ended on, and the

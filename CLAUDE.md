@@ -221,7 +221,12 @@ Bump the storage keys only with a migration in place — real data lives behind 
 
 ## How the screen is put together
 
-Top to bottom: feeding card (idle: two lines — when the last feed *started* and when it
+Top to bottom: feeding card (idle: a **Last fed** line leading the card once there is any
+formula in the log — when the baby last ate whichever way it came, and which way that was, since
+that is the question being asked at 3 a.m. and neither line below it answers it; `lastFedAt()`
+decides it, feeds dated by their start to match the line under it, and a log with no bottles in
+it never sees the line at all. It is recall, not arithmetic: nothing anywhere is counted
+differently for it. Then two lines — when the last feed *started* and when it
 *finished*, since feeds are counted start to start but time off the breast is the other half of
 the question — plus Left/Right start buttons; running: total elapsed, a live per-side tile each,
 Pause, Stop & Save, and a **Started 5 min earlier** chip under the clock), formula card (time
@@ -485,7 +490,8 @@ Interaction rules worth preserving:
   three days this started with, a busy few days pushed the oldest records off the end with
   nothing to say so. It is a week now; beyond that the backup file is the answer.
 - **Anything worded "how long ago" has to be on the tick.** The one-second interval refreshes the
-  feed, diaper and medicine lines when idle — the medicine one was missed at first and sat frozen
+  feed (the combined *Last fed* line with it, since `renderFeedCard()` ends by calling
+  `renderFedSince()`), diaper and medicine lines when idle — the medicine one was missed at first and sat frozen
   while the other two counted up. It refreshes the *line* (`renderMedSince()`), not the card:
   rebuilding `renderMedCard()` every second swaps the quick buttons out from under a thumb that
   is already on its way down. The same tick compares `shownDay` and redraws the totals and day
